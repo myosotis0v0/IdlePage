@@ -1,8 +1,8 @@
-﻿# IdlePage / 余页
+# IdlePage / 余页
 
 A discreet VS Code novel reader with status bar reading, online book sources, and account authentication.
 
-在 VS Code 状态栏中阅读小说的自用扩展。当前正在验证起点登录、书架和已订阅章节的接入能力，尚未实现正式扩展。
+在 VS Code 状态栏中阅读小说的自用扩展。目标是仅登录/重新登录需要手动操作，登录后自动获取书架、目录和可读章节并保存本地进度。当前正在验证起点接入能力，尚未实现正式扩展。
 
 ## Project layout
 
@@ -38,3 +38,7 @@ npm run manual:qidian
 浏览器配置位于 `%LOCALAPPDATA%/IdlePage/qidian-probe/`，不使用你日常浏览器配置；报告位于 `.local/qidian/`。不要将这些目录上传到 GitHub。
 
 根目录 `package.json` 当前是实验工具清单，尚非完整 VS Code 扩展清单。正式插件发布前补全扩展入口、贡献点及构建配置。
+
+## Automation requirement
+
+目前的 `login:qidian` 和 `manual:qidian` 仅用于实验对照，不是正式阅读流程。下一步验证普通浏览器伴随扩展与自动任务桥接；正式使用不得要求点击提取、手动打开章节或复制 Cookie。网站访问验证仍是待解决的可行性阻塞点。
