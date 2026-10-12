@@ -1,4 +1,4 @@
-﻿import { spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { access, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -21,4 +21,4 @@ const browser = spawn(executable, [`--user-data-dir=${profile}`, '--new-window',
 browser.on('error', () => { console.error('Unable to open Edge.'); process.exitCode = 1; });
 await new Promise((resolve, reject) => { browser.once('spawn', resolve); browser.once('error', reject); });
 browser.unref();
-console.log('Ordinary Edge opened for manual comparison. No automation, debugging connection or extraction is attached.');
+console.log('Ordinary Edge opened. This launcher uses no Playwright or remote-debugging connection.');

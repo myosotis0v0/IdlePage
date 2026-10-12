@@ -41,4 +41,17 @@ npm run manual:qidian
 
 ## Automation requirement
 
-目前的 `login:qidian` 和 `manual:qidian` 仅用于实验对照，不是正式阅读流程。下一步验证普通浏览器伴随扩展与自动任务桥接；正式使用不得要求点击提取、手动打开章节或复制 Cookie。网站访问验证仍是待解决的可行性阻塞点。
+目前的 `login:qidian` 和 `manual:qidian` 仅用于实验对照，不是正式阅读流程。普通浏览器伴随扩展已完成自动页面访问原型，本机桥接仍待实现；正式使用不得要求点击提取、手动打开章节或复制 Cookie。Playwright 的访问验证仍未解决，普通浏览器路线的长期稳定性待验证。
+
+## Ordinary browser companion probe
+
+```powershell
+npm run companion:qidian
+npm run test:labs
+```
+
+在打开的普通 Edge 中开启开发人员模式并加载 `labs/qidian/browser-companion`。这是一项一次性安装步骤；安装后自动访问首页和书架，自动更新“IdlePage 接入验证”页面，无需点击提取。
+
+本轮用户反馈 `probe-complete / bookshelf`。这仅说明自动页面访问成功，尚未验证真实书单和正文；本机桥接代码创建被自动审批拒绝，当前结果仅留在浏览器扩展自身存储，没有连接到 VS Code。详细证据和阻塞记录见 `docs/PLAN.md`。
+
+卸载实验时在 Edge 扩展管理页移除 IdlePage Qidian Access Probe 即可；当前没有本机监听服务或原生宿主注册需要清理。

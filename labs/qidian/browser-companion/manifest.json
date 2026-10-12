@@ -1,0 +1,10 @@
+﻿{
+  "manifest_version": 3,
+  "name": "IdlePage Qidian Access Probe",
+  "version": "0.0.1",
+  "description": "Automatic access diagnostics inside an ordinary browser. No network bridge.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://*.qidian.com/*"],
+  "background": { "service_worker": "worker.js", "type": "module" },
+  "content_scripts": [{ "matches": ["https://*.qidian.com/*"], "js": ["content.js"], "run_at": "document_idle" }]
+}

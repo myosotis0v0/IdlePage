@@ -1,9 +1,10 @@
-﻿import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 import { openPublicBrowser, openManualSession } from './browser.mjs';
 import { PUBLIC_TARGETS, observePage } from './probe.mjs';
+import { observeAccess } from './diagnose.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const artifacts = resolve(root, '.local/qidian');
@@ -51,12 +52,12 @@ if (mode === 'public') {
   try {
     await page.goto('https://www.qidian.com/', { waitUntil: 'domcontentloaded', timeout: 45000 });
   } catch (error) { console.log(`Initial navigation failed (${error.name}); navigate manually in the browser.`); }
-  console.log('Official browser ready. Log in manually, open your bookshelf, then a free and an already purchased chapter. No automated clicks or purchases.');
+  console.log('Official browser ready and stays open until you close it. Complete official verification and login manually. No automatic CAPTCHA actions or purchases.');
   let cycles = 0;
   while (!closed) {
     const pages = [];
     for (const current of context.pages()) {
-      try { pages.push(await observePage(current)); }
+      try { pages.push(await observeAccess(current)); }
       catch { pages.push({ skipped: true, reason: 'page-changing-or-closed' }); }
     }
     await save('session-report.json', {

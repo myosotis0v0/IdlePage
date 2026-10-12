@@ -7,8 +7,10 @@
     "scripts":  {
                     "probe:qidian":  "node labs/qidian/cli.mjs public",
                     "login:qidian":  "node labs/qidian/cli.mjs session",
-                    "check:labs":  "node --check labs/qidian/cli.mjs \u0026\u0026 node --check labs/qidian/browser.mjs \u0026\u0026 node --check labs/qidian/probe.mjs \u0026\u0026 node --check labs/qidian/manual-browser.mjs",
-                    "manual:qidian":  "node labs/qidian/manual-browser.mjs"
+                    "check:labs":  "node --check labs/qidian/cli.mjs \u0026\u0026 node --check labs/qidian/browser.mjs \u0026\u0026 node --check labs/qidian/probe.mjs \u0026\u0026 node --check labs/qidian/manual-browser.mjs \u0026\u0026 node --check labs/qidian/diagnose.mjs \u0026\u0026 node --check labs/qidian/browser-companion/worker.js \u0026\u0026 node --check labs/qidian/browser-companion/content.js \u0026\u0026 node --check labs/qidian/browser-companion/status.js",
+                    "manual:qidian":  "node labs/qidian/manual-browser.mjs",
+                    "test:labs":  "node --test labs/qidian/browser-companion.test.mjs",
+                    "companion:qidian":  "node labs/qidian/manual-browser.mjs --extensions"
                 },
     "engines":  {
                     "node":  "\u003e=22"
