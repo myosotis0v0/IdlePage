@@ -1,0 +1,22 @@
+﻿# Dependencies
+node_modules/
+
+# Build outputs
+out/
+dist/
+*.vsix
+*.tsbuildinfo
+
+# Test artifacts
+.vscode-test/
+coverage/
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
