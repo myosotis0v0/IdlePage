@@ -20,3 +20,9 @@ coverage/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Private feasibility artifacts
+.local/
+playwright/.auth/
+playwright-report/
+test-results/
