@@ -1,5 +1,8 @@
 ﻿**
-!out/**
+!out/extension.cjs
+!out/extension.cjs.map
+!browser-extension/**
 !package.json
 !README.md
 !LICENSE
+browser-extension/pairing.js

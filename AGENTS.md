@@ -8,3 +8,5 @@
 - Only login, re-login and verification within that login flow may require manual official-page interaction. After login, bookshelf pagination, catalog/chapter retrieval, session recovery and local progress persistence must be automatic. Never require manual browser navigation, extraction clicks or Cookie copying as the reading workflow.
 - Runtime access challenges fail automation acceptance: stop and report AccessBlocked instead of adopting recurring manual CAPTCHA handling. Do not automate purchases, subscription changes or bypass access controls.
 - Do not claim VIP extraction or session persistence works without authenticated live evidence.
+
+- browser-extension/ contains the shipped browser template. Never add pairing credentials there; generate paired copies in VS Code globalStorageUri. Browser worker tests belong in tests/, separate from the labs prototype.

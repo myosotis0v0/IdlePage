@@ -1,22 +1,74 @@
-﻿{
-    "name":  "idle-page",
-    "version":  "0.0.1",
-    "private":  true,
-    "description":  "A discreet VS Code novel reader with status bar reading, online book sources, and account authentication.",
-    "type":  "module",
-    "scripts":  {
-                    "probe:qidian":  "node labs/qidian/cli.mjs public",
-                    "login:qidian":  "node labs/qidian/cli.mjs session",
-                    "check:labs":  "node --check labs/qidian/cli.mjs \u0026\u0026 node --check labs/qidian/browser.mjs \u0026\u0026 node --check labs/qidian/probe.mjs \u0026\u0026 node --check labs/qidian/manual-browser.mjs \u0026\u0026 node --check labs/qidian/diagnose.mjs \u0026\u0026 node --check labs/qidian/browser-companion/worker.js \u0026\u0026 node --check labs/qidian/browser-companion/content.js \u0026\u0026 node --check labs/qidian/browser-companion/status.js",
-                    "manual:qidian":  "node labs/qidian/manual-browser.mjs",
-                    "test:labs":  "node --test labs/qidian/browser-companion.test.mjs",
-                    "companion:qidian":  "node labs/qidian/manual-browser.mjs --extensions"
-                },
-    "engines":  {
-                    "node":  "\u003e=22"
-                },
-    "license":  "MIT",
-    "devDependencies":  {
-                            "playwright":  "^1.64.0"
-                        }
+{
+  "name": "idle-page",
+  "version": "0.0.1",
+  "private": true,
+  "description": "A discreet VS Code novel reader with status bar reading, online book sources, and account authentication.",
+  "type": "module",
+  "scripts": {
+    "probe:qidian": "node labs/qidian/cli.mjs public",
+    "login:qidian": "node labs/qidian/cli.mjs session",
+    "check:labs": "node --check labs/qidian/cli.mjs && node --check labs/qidian/browser.mjs && node --check labs/qidian/probe.mjs && node --check labs/qidian/manual-browser.mjs && node --check labs/qidian/diagnose.mjs && node --check labs/qidian/browser-companion/worker.js && node --check labs/qidian/browser-companion/content.js && node --check labs/qidian/browser-companion/status.js",
+    "manual:qidian": "node labs/qidian/manual-browser.mjs",
+    "test:labs": "node --test labs/qidian/browser-companion.test.mjs",
+    "companion:qidian": "node labs/qidian/manual-browser.mjs --extensions",
+    "check:types": "tsc --noEmit",
+    "build": "npm run check:types && node scripts/build.mjs",
+    "test": "tsx --test tests/unit/*.test.ts tests/integration/*.test.ts",
+    "test:extension": "npm run build && node scripts/test-extension.mjs",
+    "vscode:prepublish": "npm run build",
+    "dev:live": "npm run build && node scripts/live-extension.mjs",
+    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js"
+  },
+  "engines": {
+    "node": ">=22",
+    "vscode": "^1.95.0"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/vscode": "^1.140.0",
+    "@vscode/test-electron": "^3.1.0",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.64.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "displayName": "IdlePage",
+  "publisher": "myosotis0v0",
+  "main": "./out/extension.cjs",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "contributes": {
+    "configuration": {
+      "properties": {
+        "idlepage.bridge.port": {
+          "default": 17655,
+          "maximum": 65535,
+          "minimum": 1024,
+          "description": "本机浏览器连接端口，修改后需重启插件并重新加载配对的浏览器扩展。",
+          "type": "integer",
+          "scope": "machine"
+        }
+      },
+      "title": "IdlePage"
+    },
+    "commands": [
+      {
+        "command": "idlepage.showStatus",
+        "title": "IdlePage: 查看接入状态"
+      },
+      {
+        "command": "idlepage.prepareBrowser",
+        "title": "IdlePage: 准备浏览器连接"
+      },
+      {
+        "command": "idlepage.restartProbe",
+        "title": "IdlePage: 重新验证接入"
+      }
+    ]
+  }
 }

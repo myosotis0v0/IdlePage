@@ -2,56 +2,56 @@
 
 A discreet VS Code novel reader with status bar reading, online book sources, and account authentication.
 
-在 VS Code 状态栏中阅读小说的自用扩展。目标是仅登录/重新登录需要手动操作，登录后自动获取书架、目录和可读章节并保存本地进度。当前正在验证起点接入能力，尚未实现正式扩展。
+自用 VS Code 状态栏小说阅读器。目标是仅登录/重新登录需要手动操作，登录后自动获取书架、目录和可读章节并保存本地进度。目前已实现桌面 VS Code 插件内的本机连接服务及配对浏览器辅助扩展；书单、正文和阅读体验尚未实现。
 
-## Project layout
+## 目录
 
-- `src/`: 正式插件代码，按入口、应用逻辑、领域模型、书源基础设施、UI 分层。
-- `labs/qidian/`: 起点接入验证脚本，不随插件发布。
-- `tests/`: 正式插件的单元、集成及扩展宿主测试，当前尚无正式测试。
-- `docs/PLAN.md`: 唯一的共享方案与进度文件，通过 Git 同步到 GitHub。
-- `.local/`: 本机实验报告和运行日志，不提交。
+- `src/`：正式插件入口、任务调度、观察结果契约、本机服务和普通 Edge 启动代码，不导入 `labs/`。
+- `browser-extension/`：配对浏览器辅助扩展模板，随插件发布；实际安装目录由插件在本机生成。
+- `tests/`：正式代码的单元、HTTP 集成、浏览器工作进程模拟和真实 VS Code 宿主测试。
+- `labs/qidian/`：独立接入实验，保留原有 Playwright 和普通浏览器原型，不发布。
+- `docs/PLAN.md`：唯一共享方案与进度文件，通过 Git 同步。
+- `.local/`：本机报告、隔离 VS Code 配置和日志，不提交。
 
-详细目录职责、验证标准和当前结果见 [方案与进度](docs/PLAN.md)。
+## 尝试 VS Code 内置本机服务
 
-## Feasibility probes
-
-需要 Node.js 22+ 和已安装的 Microsoft Edge。
+开发环境需要 Windows、Node.js 22+、桌面 VS Code 和 Microsoft Edge。
 
 ```powershell
 npm ci
+npm run build
+npm test
+npm run test:extension
+npm run dev:live
+```
+
+`dev:live` 打开持续运行的 VS Code 开发窗口，自动激活 IdlePage 并打开普通 Edge 的扩展管理页。配对目录已复制到剪贴板，在 Edge 开发人员模式中加载此目录。停用旧的 **IdlePage Qidian Access Probe** 实验扩展，避免两个测试同时运行。一次性安装后，**IdlePage Browser Companion** 自动连接、打开首页、检测页面并打开书架，无需点击提取。
+
+也可以在当前项目按 F5，选择 Run IdlePage；然后在开发窗口运行命令 `IdlePage: 准备浏览器连接`，加载该窗口生成的配对目录。不要直接加载源码 `browser-extension/`，其中不包含运行所需的本机配对文件。
+
+当前链路：普通浏览器内容脚本 → 浏览器工作进程 → `http://127.0.0.1:17655` → VS Code 扩展宿主 → 状态栏。服务仅监听 IPv4 回环地址，检查 Host、配对扩展 Origin 和本机密钥。网站登录会话始终由普通浏览器保存，插件不读取或导出 Cookie。
+
+命令：
+
+- `IdlePage: 查看接入状态`：查看脱敏观察结果。
+- `IdlePage: 准备浏览器连接`：打开 Edge 并复制本机配对目录。
+- `IdlePage: 重新验证接入`：创建新任务，浏览器自动重新执行首页→书架验证。
+
+当前默认只支持一个服务窗口。设置 `idlepage.bridge.port` 可以修改端口，修改后重启插件并重新加载同一配对目录。宿主自动测试使用隔离配置和 17656 端口，避免干扰 17655 上的交互测试。关闭开发窗口会停止其服务；浏览器扩展稍后自动尝试重新连接本机服务，不循环刷新起点。
+
+状态栏显示“书架访问完成”只说明当前页面访问诊断完成，不能证明真实书单、完整正文、订阅权益或长期稳定性。真实浏览器→VS Code 回传和浏览器关闭后的整条链路恢复仍需实测。浏览器必须运行；产品级自动启动恢复尚未实现。空书架没有书籍链接时当前诊断会保持 Indeterminate，不据此判定登录失败或书架为空。
+
+## 原有功能验证
+
+```powershell
 npm run check:labs
 npm run probe:qidian
 npm run login:qidian
-```
-
-`probe:qidian` 访问三个公开入口并记录脱敏页面信号；HTTP 状态码不能单独作为接入成功证据。
-
-`login:qidian` 打开独立浏览器配置，手动登录并访问书架及章节；每 5 秒只读取当前页面 DOM 信号，不刷新页面、不自动点击、不发送章节购买请求。关闭整个专用浏览器窗口即可结束。运行期间避免重复启动，以免配置目录锁冲突。
-
-```powershell
 npm run manual:qidian
-```
-
-`manual:qidian` 打开无 Playwright 控制的普通 Edge 独立配置，仅用于人工访问对照。它不会自动读取账号、书架或正文，也不会将会话导入 Playwright。
-
-浏览器配置位于 `%LOCALAPPDATA%/IdlePage/qidian-probe/`，不使用你日常浏览器配置；报告位于 `.local/qidian/`。不要将这些目录上传到 GitHub。
-
-根目录 `package.json` 当前是实验工具清单，尚非完整 VS Code 扩展清单。正式插件发布前补全扩展入口、贡献点及构建配置。
-
-## Automation requirement
-
-目前的 `login:qidian` 和 `manual:qidian` 仅用于实验对照，不是正式阅读流程。普通浏览器伴随扩展已完成自动页面访问原型，本机桥接仍待实现；正式使用不得要求点击提取、手动打开章节或复制 Cookie。Playwright 的访问验证仍未解决，普通浏览器路线的长期稳定性待验证。
-
-## Ordinary browser companion probe
-
-```powershell
 npm run companion:qidian
 npm run test:labs
 ```
 
-在打开的普通 Edge 中开启开发人员模式并加载 `labs/qidian/browser-companion`。这是一项一次性安装步骤；安装后自动访问首页和书架，自动更新“IdlePage 接入验证”页面，无需点击提取。
+Playwright 沙箱配置修正后仍遇到起点访问验证。普通 Edge 的独立原型已由用户反馈 `probe-complete / bookshelf`；该原型将结果保存在浏览器自身，与新的本机连接版本分开。
 
-本轮用户反馈 `probe-complete / bookshelf`。这仅说明自动页面访问成功，尚未验证真实书单和正文；本机桥接代码创建被自动审批拒绝，当前结果仅留在浏览器扩展自身存储，没有连接到 VS Code。详细证据和阻塞记录见 `docs/PLAN.md`。
-
-卸载实验时在 Edge 扩展管理页移除 IdlePage Qidian Access Probe 即可；当前没有本机监听服务或原生宿主注册需要清理。
+浏览器配置位于 `%LOCALAPPDATA%/IdlePage/qidian-probe/`，配对密钥保存在 VS Code SecretStorage，并写入该窗口的私有辅助扩展目录供本机连接使用。不要上传浏览器配置、配对文件或 `.local/`。详细证据与未完成事项见 [方案与进度](docs/PLAN.md)。

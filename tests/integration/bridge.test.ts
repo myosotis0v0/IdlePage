@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { request } from 'node:http';
+import { LocalBridgeServer } from '../../src/infrastructure/local-bridge/LocalBridgeServer';
+import { QidianAccessProbe } from '../../src/application/QidianAccessProbe';
+const token = 'a'.repeat(64);
+const origin = 'chrome-extension://' + 'a'.repeat(32);
+const headers = { Origin: origin, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+const visible = { state: 'SiteContentVisible', pageKind: 'other', bodyCharacters: 1500, bookLinks: 3, verification: false, tooFrequent: false, captchaFrame: false };
+
+test('loopback API enforces pairing, host, preflight, payload limits and task identity', async t => {
+  const bridge = new LocalBridgeServer({ port: 0, token, origin, probe: new QidianAccessProbe() });
+  await bridge.start(); t.after(() => bridge.close());
+  const get = (extra: Record<string, string> = {}) => fetch(bridge.endpoint() + '/v1/tasks/next', { headers: { ...headers, ...extra } });
+  const post = (body: string, extra: Record<string, string> = {}) => fetch(bridge.endpoint() + '/v1/tasks/result', { method: 'POST', headers: { ...headers, ...extra }, body });
+  assert.equal((await fetch(bridge.endpoint() + '/v1/status')).status, 403);
+  assert.equal((await get({ Origin: 'https://www.qidian.com' })).status, 403);
+  const wrongHostStatus = await new Promise<number>(resolve => {
+    const req = request(bridge.endpoint() + '/v1/tasks/next', { headers: { ...headers, Host: 'evil.example' } }, res => { res.resume(); resolve(res.statusCode!); });
+    req.end();
+  });
+  assert.equal(wrongHostStatus, 403);
+  assert.equal((await get({ Authorization: 'Bearer wrong' })).status, 401);
+  const preflight = await fetch(bridge.endpoint() + '/v1/tasks/result', { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization,content-type' } });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), origin);
+  assert.equal((await fetch(bridge.endpoint() + '/v1/tasks/result', { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'x-extra' } })).status, 403);
+  assert.equal((await post('{}', { 'Content-Type': 'text/plain' })).status, 415);
+  assert.equal((await post('{')).status, 400);
+  assert.equal((await post(JSON.stringify({ taskId: 'x', report: visible, cookie: 'not-allowed' }))).status, 400);
+  assert.equal((await post(' '.repeat(17000))).status, 413);
+  const first = (await (await get()).json()).task;
+  assert.equal((await post(JSON.stringify({ taskId: first.id, report: { ...visible, bodyCharacters: -1 } }))).status, 400);
+  assert.equal((await post(JSON.stringify({ taskId: first.id, report: { ...visible, tooFrequent: true } }))).status, 200);
+  assert.equal((await (await get()).json()).task.id, first.id);
+  const access = await post(JSON.stringify({ taskId: first.id, report: visible }));
+  assert.equal(access.status, 200);
+  assert.equal((await access.json()).phase, 'waiting-bookshelf');
+  assert.equal((await post(JSON.stringify({ taskId: first.id, report: visible }))).status, 409);
+  const shelf = (await (await get()).json()).task;
+  const complete = await post(JSON.stringify({ taskId: shelf.id, report: { ...visible, pageKind: 'bookshelf' } }));
+  assert.equal((await complete.json()).phase, 'probe-complete');
+  assert.equal((await (await get()).json()).task, null);
+  await bridge.close();
+  await assert.rejects(fetch(bridge.endpoint() + '/v1/status'));
+});

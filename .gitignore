@@ -26,3 +26,6 @@ Thumbs.db
 playwright/.auth/
 playwright-report/
 test-results/
+
+# Pairing credentials exist only in generated private copies
+browser-extension/pairing.js
