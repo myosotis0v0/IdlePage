@@ -2,9 +2,37 @@ import { parseBookshelfPage, type BookshelfPage } from '../domain/bookshelf';
 import { parseChapterBatch, type ChapterResult } from '../domain/chapter';
 import { parseCatalogBatch, type CatalogResult } from '../domain/catalog';
 import { randomUUID } from 'node:crypto';
+import type { CachedChapter } from '../domain/readingCache';
 import { parseObservation, type AccessReport, type BrowserTask } from '../domain/browserBridge';
 
 export class QidianAccessProbe {
+  constructor(private readonly useCache = false) {}
+  private revision = 0;
+  private cacheTask?: string;
+  private chapterSource: 'online' | 'cache' = 'online';
+  cacheRevision() { return this.revision; }
+  restoreMetadata(shelf?: BookshelfPage, catalog?: CatalogResult) {
+    this.bookshelf = shelf;
+    if (catalog?.bookId === shelf?.books[0]?.id) this.catalog = catalog;
+  }
+  pendingCacheChapter() {
+    if (!this.cacheTask || this.cacheTask !== this.task?.id || !this.catalog) return;
+    return { taskId: this.cacheTask, bookId: this.catalog.bookId, ...this.catalog.chapters[this.pendingChapterIndex] };
+  }
+  resolveCachedChapter(taskId: string, cached?: CachedChapter): boolean {
+    const pending = this.pendingCacheChapter();
+    if (!pending || pending.taskId !== taskId) return false;
+    this.cacheTask = undefined;
+    if (cached && cached.bookId === pending.bookId && cached.chapterId === pending.id && cached.url === pending.url) {
+      this.finishChapter({ status: 'available', title: pending.title, text: cached.text }, 'cache');
+    } else { this.phase = 'waiting-chapter'; this.chapterDeadline = Date.now() + 90000; }
+    return true;
+  }
+  cacheChapter(): CachedChapter | undefined {
+    const chapter = this.catalog?.chapters[this.currentChapterIndex];
+    if (!chapter || !this.readingChapter || this.chapterSource !== 'online') return;
+    return { bookId: this.catalog!.bookId, chapterId: chapter.id, url: chapter.url, title: chapter.title, text: this.readingChapter.text };
+  }
   private task: BrowserTask | null = this.createTask('access');
   private report?: AccessReport;
   private bookshelf?: BookshelfPage;
@@ -33,7 +61,7 @@ export class QidianAccessProbe {
   nextTask(): BrowserTask | null {
     this.expireChapter();
     this.lastSeenAt = new Date().toISOString();
-    return this.task ? { ...this.task } : null;
+    return this.task && !this.pendingCacheChapter() ? { ...this.task } : null;
   }
   accept(taskId: unknown, value: unknown): 'accepted' | 'stale' | 'invalid' {
     if (!this.task || taskId !== this.task.id) return 'stale';
@@ -68,7 +96,7 @@ export class QidianAccessProbe {
     if (this.report?.state !== 'SiteContentVisible' || this.report.pageKind !== 'bookshelf') return 'invalid';
     const page = parseBookshelfPage(value);
     if (!page || !page.books.length) return 'invalid';
-    this.bookshelf = page; this.task = null; this.lastSeenAt = new Date().toISOString();
+    this.bookshelf = page; this.revision++; this.task = null; this.lastSeenAt = new Date().toISOString();
     this.phase = page.strategy === 'unconfirmed' ? 'bookshelf-candidates-ready' : 'bookshelf-page-ready';
     if (this.catalogGoal && page.strategy !== 'unconfirmed') this.beginCatalog(page.books[0].id);
     return 'accepted';
@@ -107,9 +135,11 @@ export class QidianAccessProbe {
     this.chapterDeadline = Date.now() + 90000;
     this.task = { id: randomUUID(), kind: 'chapter', bookId: this.catalog!.bookId, url: chapter.url };
     this.report = undefined; this.phase = 'waiting-chapter';
+    this.cacheTask = this.useCache ? this.task.id : undefined;
+    if (this.cacheTask) { this.phase = 'checking-cache'; this.chapterDeadline = 0; }
   }
-  private finishChapter(result: ChapterResult): void {
-    if (result.status === 'available') { this.readingChapter = result; this.currentChapterIndex = this.pendingChapterIndex; }
+  private finishChapter(result: ChapterResult, source: 'online' | 'cache' = 'online'): void {
+    if (result.status === 'available') { this.chapterSource = source; this.readingChapter = result; this.currentChapterIndex = this.pendingChapterIndex; this.revision++; }
     this.chapter = result; this.task = null; this.chapterGoal = false; this.chapterText = ''; this.chapterDeadline = 0;
     this.phase = result.status === 'available' ? 'chapter-preview-ready' : 'chapter-unavailable';
   }
@@ -160,13 +190,13 @@ export class QidianAccessProbe {
     for (const chapter of batch.chapters) { if (ids.has(chapter.id)) return 'invalid'; ids.add(chapter.id); }
     catalog.chapters.push(...batch.chapters); this.lastSeenAt = new Date().toISOString();
     this.phase = 'receiving-catalog';
-    if (catalog.chapters.length === catalog.total) { this.task = null; this.phase = 'catalog-preview-ready'; if (this.chapterGoal) this.beginChapter(); }
+    if (catalog.chapters.length === catalog.total) { this.revision++; this.task = null; this.phase = 'catalog-preview-ready'; if (this.chapterGoal) this.beginChapter(); }
     return 'accepted';
   }
   getCatalog(): CatalogResult | undefined { return this.catalog ? structuredClone(this.catalog) : undefined; }
   getBookshelf(): BookshelfPage | undefined { return this.bookshelf ? structuredClone(this.bookshelf) : undefined; }
   snapshot() {
-    return { phase: this.phase, lastSeenAt: this.lastSeenAt, report: this.report ? { ...this.report } : undefined,
+    return { phase: this.phase, chapterSource: this.chapterSource, lastSeenAt: this.lastSeenAt, report: this.report ? { ...this.report } : undefined,
       chapterNavigation: { current: this.currentChapterIndex + 1, total: this.catalog?.chapters.length ?? 0, busy: this.task?.kind === 'chapter', canNext: !this.task && !!this.readingChapter && this.currentChapterIndex + 1 < (this.catalog?.chapters.length ?? 0) },
       chapterSummary: this.chapter ? this.chapter.status === 'available' ? { status: 'available', characters: this.chapter.text.length } : { ...this.chapter } : undefined,
       chapterDiagnostics: this.chapterDiagnostics,

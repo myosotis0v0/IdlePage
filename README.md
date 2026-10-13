@@ -12,6 +12,8 @@ A discreet VS Code novel reader with status bar reading, online book sources, an
 - 正文统一区分可获取与不可获取，对登录失效、内容限制或读取错误显示提醒。
 - 按读取任务自动唤起专用 Edge，使用浏览器保存的登录会话连接。
 - 读取时自动隐藏专用浏览器窗口，保留手动显示和隐藏入口。
+- 任务网页稳定时只保留一个，切换时最多两个；成功后关闭旧页，读取失败时保留上一页。
+- 本地保存书籍、卷、章节及已获取正文的映射；再次阅读优先使用缓存，未命中时按需在线获取。
 
 目录的免费或付费标记仅供参考，可读性以账号在官方页面实际能够获取的正文为准。插件不执行购买、订阅或条件解锁；遇到访问验证时停止任务并提醒。
 
@@ -65,6 +67,10 @@ npm run build
 | `idlepage.bridge.port` | `17655` | 本机服务端口；修改后重启插件并重新加载同一配对目录 |
 | `idlepage.browser.autoStart` | `true` | 发起读取任务时自动唤起专用 Edge |
 | `idlepage.browser.autoHide` | `true` | 读取任务中自动隐藏专用 Edge；可关闭以保持浏览器可见 |
+| `idlepage.cache.enabled` | `true` | 启用本地阅读缓存；修改后重启插件 |
+| `idlepage.cache.maxSizeMB` | `200` | 缓存容量，单位 MiB；修改后立即执行容量整理 |
+
+缓存容量包含数据和索引，超额时优先淘汰最久未使用的章节正文，再淘汰元数据；原子写入期间会有短暂临时文件。仅缓存成功获取的完整结果，不自动预下载整本书。章节页会标明“在线获取”或“本地缓存”。需要更新书架或目录时，重新执行对应提取命令。任务页管理不包括伴随扩展状态页和用户自行打开或导航的页面。
 
 连接失败时，先确认 VS Code 服务窗口运行中，以及专用 Edge 中的伴随扩展已安装并启用。伴随页的 `connectionError` 可帮助排查：
 
@@ -77,5 +83,7 @@ npm run build
 网站登录会话保存在专用 Edge 配置中，插件不读取或导出 Cookie。本机服务仅监听 `127.0.0.1`，使用配对扩展来源和密钥校验连接。
 
 浏览器配置位于 `%LOCALAPPDATA%/IdlePage/qidian-probe/`；配对文件由插件生成在 VS Code 私有存储目录。请勿上传浏览器配置、配对文件或 `.local/` 中的数据。
+
+结构化阅读缓存位于该 VS Code 配置的 `globalStorage/myosotis0v0.idle-page/reading-cache/`，仅保存在本机，不同步到 Git。源码测试窗口使用 `.local/vscode-live-user/User/globalStorage/` 下的独立存储。关闭服务窗口后可删除 `reading-cache` 目录清空缓存，不影响浏览器登录会话。
 
 开发方案、验证证据、进度和待办统一见 [方案与进度](docs/PLAN.md)。

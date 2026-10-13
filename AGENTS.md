@@ -11,5 +11,7 @@
 - Do not claim VIP extraction or session persistence works without authenticated live evidence.
 - Normal reading uses a hidden dedicated Edge window. Show it for manual login/re-login and hide it after verified login and task recovery. Access blocks and read failures stop the task with a VS Code notice. Provide explicit show/hide commands; an explicit diagnostic show must not be immediately overridden by automatic hiding. Control only windows positively identified as belonging to IdlePage's dedicated browser profile.
 - The owning VS Code service must clean up its dedicated Edge and its lifetime guardian on exit. Keep one guardian per dedicated profile; never terminate ordinary Edge instances or unidentified process trees. Handle abrupt host exit independently of deactivate().
+- Keep one managed task tab after completion and at most two during navigation; retire the old tab only after acceptance, and preserve the previous chapter on failure. Never close an unowned or user-navigated tab.
+- Persist book/volume/chapter/body mappings only in private global storage. Default cache budget is 200 MiB including its index; use bounded atomic writes and chapter-first LRU eviction. Cache only successfully acquired content, with no automatic whole-book prefetch. Cache reuse is separate from reading-position persistence.
 
 - browser-extension/ contains the shipped browser template. Never add pairing credentials there; generate paired copies in VS Code globalStorageUri. Browser worker tests belong in tests/, separate from the labs prototype.

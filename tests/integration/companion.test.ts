@@ -24,12 +24,13 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
   const network = { online, wrongToken: false };
   const chrome = {
     storage: { local: {
-      async get(key: string) { return { [key]: structuredClone(data[key]) }; },
+      async get(key: string | string[]) { return Object.fromEntries((Array.isArray(key) ? key : [key]).map(k => [k, structuredClone(data[k])])); },
       async set(values: Record<string, unknown>) { Object.assign(data, structuredClone(values)); },
     } },
     tabs: {
       async create(options: { url: string; active: boolean }) { const tab = { id: tabs.length + 1, ...options }; tabs.push(tab); return tab; },
-      async get(id: number) { if (closed.has(id)) throw new Error('closed'); return tabs.find(tab => tab.id === id); },
+      async get(id: number) { const tab = tabs.find(tab => tab.id === id); if (closed.has(id) || !tab) throw new Error('closed'); return tab; },
+      async remove(id: number) { closed.add(id); },
       async update(id: number, options: unknown) { updates.push({ id, options }); },
     },
     runtime: {
@@ -43,7 +44,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
       onAlarm: { addListener: (fn: (...args: any[]) => any) => { events.alarm = fn; } },
     },
   };
-  const context: Record<string, any> = { endpoint: bridge.endpoint(), token: staleImport ? 'd'.repeat(64) : token, chrome, URL, AbortSignal,
+  const context: Record<string, any> = { endpoint: bridge.endpoint(), token: staleImport ? 'd'.repeat(64) : token, chrome, URL, AbortSignal, setTimeout,
     fetch: async (url: string, options: RequestInit) => {
       if (url === origin + '/pairing.json') return { ok: true, json: async () => ({ endpoint: bridge.endpoint(), token }) };
       if (!network.online) throw new Error('offline');
@@ -192,4 +193,31 @@ test('chapter task navigates to selected catalog URL and transfers only sanitize
   assert.equal((await h.emitChapter(batch)).accepted, true);
   assert.equal(h.data.phase, 'chapter-preview-ready'); assert.equal(h.data.chapterSummary.characters, 16);
   assert.ok(!JSON.stringify(h.data).includes('Fixture body'));
+});
+
+test('managed chapter tabs stay at one after success, two in transit, and restore the old tab on failure', async t => {
+  const h = await harness(t);
+  h.probe.restoreMetadata({ books: [{ id: '100', title: 'Fixture', url: 'https://www.qidian.com/book/100/' }], strategy: 'table', anchorCount: 1, truncated: false, pagination: 'not-detected', containerHints: [] },
+    { bookId: '100', total: 3, declaredCount: 3, truncated: false, strategy: 'catalog-container', chapters: [1, 2, 3].map(id => ({ id: String(id), title: 'Fixture', volume: '', payment: 'unknown', url: `https://www.qidian.com/chapter/100/${id}/` })) });
+  const count = () => h.tabs.filter(tab => !h.closed.has(tab.id)).length;
+  h.probe.startChapterExtraction(); await h.poll(); assert.equal(count(), 2);
+  const complete = async (id: number) => {
+    const url = `https://www.qidian.com/chapter/100/${id}/`;
+    await h.emit({ ...visible, pageKind: 'chapter' }, { url });
+    await h.emitChapter({ status: 'available', offset: 0, total: 4, text: 'body' }, url);
+  };
+  await complete(1); assert.equal(count(), 1);
+  h.probe.startNextChapter(); await h.poll(); assert.equal(count(), 2);
+  await complete(2); assert.equal(count(), 1); const old = h.data.managedTabs.current.id;
+  h.probe.startNextChapter(); await h.poll(); assert.equal(count(), 2);
+  await h.emitChapter({ status: 'unavailable', reason: 'locked' }, 'https://www.qidian.com/chapter/100/3/');
+  assert.equal(count(), 1); assert.equal(h.data.managedTabs.current.id, old);
+  assert.equal(h.probe.snapshot().chapterNavigation.current, 2);
+  h.probe.startNextChapter(); await h.poll(); assert.equal(count(), 2);
+  h.probe.expireChapter(Date.now() + 100000); await h.poll();
+  assert.equal(count(), 1); assert.equal(h.data.managedTabs.current.id, old);
+  // A user-owned navigation is not closed when the next managed chapter succeeds.
+  h.tabs.find(tab => tab.id === old)!.url = 'https://example.com/';
+  h.probe.startNextChapter(); await h.poll(); await complete(3);
+  assert.equal(h.closed.has(old), false); assert.equal(h.data.taskTabSummary.count, 1);
 });

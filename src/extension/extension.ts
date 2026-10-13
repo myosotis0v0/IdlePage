@@ -11,6 +11,7 @@ import { BrowserWindowController } from '../application/BrowserWindowController'
 import { BrowserVisibility } from '../application/BrowserVisibility';
 import { EdgeWindowControl } from '../infrastructure/qidian/EdgeWindowControl';
 import { EdgeLifetime } from '../infrastructure/qidian/EdgeLifetime';
+import { ReadingCache } from '../infrastructure/cache/ReadingCache';
 import { LocalBridgeServer } from '../infrastructure/local-bridge/LocalBridgeServer';
 import { prepareCompanion, readCompanionOrigin, readExistingPairingToken } from '../infrastructure/local-bridge/prepareCompanion';
 import { openEdgeExtensions, openEdgeCompanion } from '../infrastructure/qidian/openEdgeExtensions';
@@ -24,7 +25,14 @@ export async function activate(context: vscode.ExtensionContext) {
   status.text = 'IdlePage: 启动中'; status.show();
   context.subscriptions.push(output, status);
   const storage = context.globalStorageUri.fsPath;
-  const probe = new QidianAccessProbe();
+  const cacheEnabled = vscode.workspace.getConfiguration('idlepage').get<boolean>('cache.enabled', true);
+  const probe = new QidianAccessProbe(cacheEnabled);
+  let cache: ReadingCache | undefined;
+  let cachedRevision = 0;
+  let checkingTask: string | undefined;
+  let ensureBrowser = () => {};
+  let cacheWarning = false;
+  const warnCache = () => { if (!cacheWarning) { cacheWarning = true; output.appendLine('本地缓存读写失败，继续在线读取。'); } };
   const lifetime = new EdgeLifetime(storage);
   const browserWindows = new BrowserWindowController(new EdgeWindowControl());
   let manageVisibility = false;
@@ -72,11 +80,25 @@ export async function activate(context: vscode.ExtensionContext) {
       chapterPanel.onDidDispose(() => { chapterPanel = undefined; }); context.subscriptions.push(chapterPanel);
     }
     const notice = result?.status === 'unavailable' ? chapterFailureMessage[result.reason] : undefined;
-    chapterPanel.webview.html = chapterPreview(reading ?? result!, reading ? probe.snapshot().chapterNavigation : undefined, notice); chapterPanel.reveal();
+    chapterPanel.webview.html = chapterPreview(reading ?? result!, reading ? probe.snapshot().chapterNavigation : undefined, notice, probe.snapshot().chapterSource); chapterPanel.reveal();
   };
   const update = () => {
-    const snapshot = { ...probe.snapshot(), browserConnection: browserSession?.state,
+    const snapshot = { ...probe.snapshot(), cache: cache?.summary(), browserConnection: browserSession?.state,
       browserWindow: { mode: browserWindows.mode, lastAutomaticControl: visibility.lastResult } };
+    if (cache && cachedRevision !== probe.cacheRevision()) {
+      cachedRevision = probe.cacheRevision();
+      const shelf = probe.getBookshelf(), catalog = probe.getCatalog(), chapter = probe.cacheChapter();
+      if (shelf) void cache.saveShelf(shelf).catch(warnCache);
+      if (catalog && catalog.chapters.length === catalog.total) void cache.saveCatalog(catalog).catch(warnCache);
+      if (chapter) void cache.saveChapter(chapter).catch(warnCache);
+    }
+    const pending = probe.pendingCacheChapter();
+    if (pending && checkingTask !== pending.taskId) {
+      checkingTask = pending.taskId;
+      void (cache?.chapter(pending.bookId, pending.id) ?? Promise.resolve(undefined)).catch(() => { warnCache(); return undefined; }).then(chapter => {
+        if (probe.resolveCachedChapter(pending.taskId, chapter)) { update(); ensureBrowser(); }
+      });
+    }
     const state = snapshot.report?.state;
     const nextVisibilityKey = `${probe.currentTaskId() ?? ''}:${state ?? ''}`;
     if (manageVisibility && vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoHide', true) && nextVisibilityKey !== visibilityKey) {
@@ -91,7 +113,7 @@ export async function activate(context: vscode.ExtensionContext) {
       browserSession?.state === 'failed' ? '浏览器连接失败' :
       snapshot.phase === 'chapter-preview-ready' ? `正文 ${snapshot.chapterSummary?.characters ?? 0} 字符待核对` :
       snapshot.phase === 'chapter-unavailable' ? '正文暂不可获取' :
-      ['waiting-chapter', 'receiving-chapter'].includes(snapshot.phase) ? '正在获取正文' :
+      ['checking-cache', 'waiting-chapter', 'receiving-chapter'].includes(snapshot.phase) ? '正在获取正文' :
       snapshot.phase === 'catalog-preview-ready' ? `目录 ${snapshot.catalogSummary?.count ?? 0} 章待核对` :
       snapshot.phase === 'catalog-not-ready' ? '尚未找到目录章节' :
       snapshot.phase === 'waiting-catalog' ? '正在打开目录' :
@@ -127,6 +149,15 @@ export async function activate(context: vscode.ExtensionContext) {
       },
     });
     await bridge.start();
+    if (cacheEnabled) {
+      try {
+        const candidate = new ReadingCache(join(storage, 'reading-cache'), vscode.workspace.getConfiguration('idlepage').get<number>('cache.maxSizeMB', 200) * 1024 * 1024);
+        await candidate.initialize();
+        const shelf = await candidate.shelf();
+        const catalog = shelf?.books[0] ? await candidate.catalog(shelf.books[0].id) : undefined;
+        probe.restoreMetadata(shelf, catalog?.catalog); cache = candidate;
+      } catch { warnCache(); }
+    }
     // Do not overwrite a running window's paired copy when binding fails.
     const companion = await prepareCompanion(context.extensionPath, storage, bridge.endpoint(), token);
     browserSession = new BrowserSession({ launch: async () => {
@@ -134,10 +165,10 @@ export async function activate(context: vscode.ExtensionContext) {
       void visibility.requestHide();
     }, isCurrent: id => probe.isCurrentTask(id), hasObserved: id => probe.hasObservedTask(id), onChanged: update });
     context.subscriptions.push({ dispose: () => browserSession?.dispose() });
-    stopBrowser = async () => { visibility.dispose(); browserSession?.dispose(); await lifetime.stop(); };
-    const ensureBrowser = () => {
+    stopBrowser = async () => { visibility.dispose(); browserSession?.dispose(); try { await cache?.flush(); } finally { await lifetime.stop(); } };
+    ensureBrowser = () => {
       const id = probe.currentTaskId();
-      if (!id) return;
+      if (!id || probe.pendingCacheChapter()) return;
       const config = vscode.workspace.getConfiguration('idlepage');
       if (!config.get<boolean>('browser.autoStart', true) && !config.get<boolean>('browser.autoHide', true)) return;
       void lifetime.start().then(async () => {
@@ -172,6 +203,9 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     };
     context.subscriptions.push(
+      vscode.workspace.onDidChangeConfiguration(event => {
+        if (cache && event.affectsConfiguration('idlepage.cache.maxSizeMB')) void cache.setLimit(vscode.workspace.getConfiguration('idlepage').get<number>('cache.maxSizeMB', 200) * 1024 * 1024).catch(warnCache);
+      }),
       vscode.commands.registerCommand('idlepage.showBrowser', () => controlBrowserWindow('show')),
       vscode.commands.registerCommand('idlepage.hideBrowser', () => controlBrowserWindow('hide')),
       vscode.commands.registerCommand('idlepage.showStatus', () => {
@@ -203,7 +237,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const expiryTimer = setInterval(() => { if (probe.expireChapter()) update(); }, 1000);
     context.subscriptions.push({ dispose: () => clearInterval(expiryTimer) });
     return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory,
-      getBrowserWindowMode: () => browserWindows.mode };
+      getBrowserWindowMode: () => browserWindows.mode, getCacheStatus: () => cache?.summary() };
   } catch (error) {
     await bridge?.close(); bridge = undefined;
     const code = (error as NodeJS.ErrnoException).code;

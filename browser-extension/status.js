@@ -1,5 +1,5 @@
 async function render() {
-  const state = await chrome.storage.local.get(['connection', 'connectionError', 'phase', 'report', 'serverReport', 'bookshelfSummary', 'catalogSummary', 'chapterSummary']);
+  const state = await chrome.storage.local.get(['connection', 'connectionError', 'phase', 'report', 'serverReport', 'bookshelfSummary', 'catalogSummary', 'chapterSummary', 'taskTabSummary']);
   document.getElementById('report').textContent = JSON.stringify(state, null, 2);
 }
 chrome.storage.onChanged.addListener(() => { void render(); });
@@ -9,8 +9,8 @@ async function connect() {
   const state = await chrome.storage.local.get(['workerVersion', 'recoveryVersion']);
   // A development update may leave the old worker resident. Recover once per
   // protocol version, including when that worker cached an obsolete credential.
-  if (state.workerVersion !== 6 && state.recoveryVersion !== 6) {
-    await chrome.storage.local.set({ recoveryVersion: 6 }); chrome.runtime.reload();
+  if (state.workerVersion !== 7 && state.recoveryVersion !== 7) {
+    await chrome.storage.local.set({ recoveryVersion: 7 }); chrome.runtime.reload();
   }
 }
 void connect();
