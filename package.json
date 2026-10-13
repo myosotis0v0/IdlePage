@@ -135,6 +135,18 @@
       {
         "command": "idlepage.cancelTask",
         "title": "IdlePage: 取消当前获取或登录等待"
+      },
+      {
+        "command": "idlepage.openBookshelf",
+        "title": "余页: 进入书架"
+      },
+      {
+        "command": "idlepage.refreshAll",
+        "title": "余页: 全部刷新"
+      },
+      {
+        "command": "idlepage.openSettings",
+        "title": "余页: 设置"
       }
     ]
   }

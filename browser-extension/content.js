@@ -109,9 +109,9 @@
         catalogSent = true;
         return;
       }
-      if (!bookshelfRequested || shelfSent || state !== 'SiteContentVisible' || pageKind !== 'bookshelf') return;
+      if (!bookshelfRequested || shelfSent || state !== 'SiteContentVisible' && !report.loginEvidence || pageKind !== 'bookshelf') return;
       const page = globalThis.IdlePageBookshelf?.extract(document, location);
-      if (!page || !page.books.length) return;
+      if (!page || !page.books.length && page.strategy === 'unconfirmed') return;
       const signature = JSON.stringify(page);
       stableSamples = signature === shelfSignature ? stableSamples + 1 : 1;
       shelfSignature = signature;

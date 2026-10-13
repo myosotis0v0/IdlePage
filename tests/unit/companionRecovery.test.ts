@@ -14,5 +14,5 @@ async function openPage(data: Record<string, unknown>) {
 test('connection page upgrades an older resident worker once and never reloads current workers', async () => {
   const old = { workerVersion: 4 };
   assert.equal(await openPage(old), 1); assert.equal(await openPage(old), 0);
-  assert.equal(await openPage({ workerVersion: 8 }), 0);
+  assert.equal(await openPage({ workerVersion: 9 }), 0);
 });

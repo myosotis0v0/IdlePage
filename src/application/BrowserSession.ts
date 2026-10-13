@@ -14,6 +14,7 @@ export class BrowserSession {
   private disposed = false;
   constructor(private readonly options: BrowserSessionOptions) {}
   noteContact(): void { this.lastContact = Date.now(); }
+  forgetContact(): void { this.lastContact = 0; }
   dispose(): void { this.disposed = true; }
   private change(state: BrowserSession['state']) { this.state = state; this.options.onChanged?.(); }
   ensure(taskId: string): Promise<string> {

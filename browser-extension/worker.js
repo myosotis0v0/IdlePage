@@ -65,14 +65,14 @@ async function poll() {
     if ((!safeCatalog && !safeChapter && !['https://www.qidian.com/', 'https://my.qidian.com/bookcase/'].includes(task.url)) || typeof task.id !== 'string') return;
     const { activeTask, managedTabs } = await chrome.storage.local.get(['activeTask', 'managedTabs']);
     if (epoch !== navigationEpoch) return;
-    if (activeTask?.id === task.id && activeTask.protocolVersion === 5) {
+    if (activeTask?.id === task.id && activeTask.protocolVersion === 6) {
       try { await chrome.tabs.get(activeTask.tabId); return; }
       catch { if (state.report?.state === 'AccessBlocked') return; }
     }
     await removeOwned(managedTabs?.previous);
     const tab = await chrome.tabs.create({ url: task.url, active: task.kind === 'login' });
     if (epoch !== navigationEpoch) { await chrome.tabs.remove(tab.id); return; }
-    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 5, attentionShown: task.kind === 'login' },
+    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 6, attentionShown: task.kind === 'login' },
       managedTabs: { current: { id: tab.id, url: task.url, kind: task.kind }, previous: managedTabs?.current ?? null },
       taskTabSummary: { count: managedTabs?.current ? 2 : 1 } });
   } catch (error) {
@@ -144,7 +144,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'idlepage-bridge') void poll(); });
 async function initialize() {
-  await chrome.storage.local.set({ workerVersion: 8 });
+  await chrome.storage.local.set({ workerVersion: 9 });
   await chrome.alarms.create('idlepage-bridge', { periodInMinutes: 0.5 });
   await poll();
 }

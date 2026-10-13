@@ -43,6 +43,27 @@ export class QidianAccessProbe {
     if (reason === 'cancelled') { this.phase = 'cancelled'; this.report = undefined; }
   }
   cacheRevision() { return this.revision; }
+  invalidateTask(): void {
+    this.task = null; this.suspended = undefined; this.failure = undefined; this.report = undefined;
+    this.chapterDeadline = 0; this.chapterText = ''; this.cacheTask = undefined; this.chapter = undefined;
+    this.chapterGoal = false; this.phase = 'idle';
+  }
+  readingLocation() { return { bookId: this.readingCatalog?.bookId, chapterId: this.readingCatalog?.chapters[this.currentChapterIndex]?.id }; }
+  selectBook(bookId: string, cached?: CatalogResult): boolean {
+    if (!this.bookshelf?.books.some(book => book.id === bookId)) return false;
+    this.resetRecovery(); this.chapterGoal = false; this.catalogGoal = false;
+    this.chapter = undefined; this.chapterText = ''; this.chapterDeadline = 0; this.report = undefined;
+    if (cached?.bookId === bookId && cached.chapters.length === cached.total && cached.total > 0) {
+      this.catalog = structuredClone(cached); this.task = null; this.phase = 'catalog-preview-ready';
+    } else this.beginCatalog(bookId);
+    return true;
+  }
+  selectChapter(bookId: string, chapterId: string): boolean {
+    if (this.catalog?.bookId !== bookId || this.catalog.chapters.length !== this.catalog.total) return false;
+    const index = this.catalog.chapters.findIndex(chapter => chapter.id === chapterId);
+    if (index < 0) return false;
+    this.resetRecovery(); this.chapterGoal = true; this.chapter = undefined; this.beginChapter(index); return true;
+  }
   restoreMetadata(shelf?: BookshelfPage, catalog?: CatalogResult) {
     this.bookshelf = shelf;
     if (catalog?.bookId === shelf?.books[0]?.id) this.catalog = catalog;
@@ -137,10 +158,10 @@ export class QidianAccessProbe {
     if (!this.task || this.task.kind !== 'bookshelf-list' || taskId !== this.task.id) return 'stale';
     if (this.report?.state !== 'SiteContentVisible' || this.report.pageKind !== 'bookshelf') return 'invalid';
     const page = parseBookshelfPage(value);
-    if (!page || !page.books.length) return 'invalid';
+    if (!page || !page.books.length && page.strategy === 'unconfirmed') return 'invalid';
     this.bookshelf = page; this.revision++; this.task = null; this.lastSeenAt = new Date().toISOString();
     this.phase = page.strategy === 'unconfirmed' ? 'bookshelf-candidates-ready' : 'bookshelf-page-ready';
-    if (this.catalogGoal && page.strategy !== 'unconfirmed') this.beginCatalog(page.books[0].id);
+    if (this.catalogGoal && page.strategy !== 'unconfirmed' && page.books[0]) this.beginCatalog(page.books[0].id);
     return 'accepted';
   }
   private beginCatalog(bookId: string): void {

@@ -3,7 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import * as vscode from 'vscode';
-interface Exports { getBridgeStatus(): { endpoint: string; phase: string }; getCompanionDirectory(): string; getBrowserWindowMode(): string }
+import { hoverMenu, menuCommands } from '../../src/ui/navigation';
+interface Exports { getBridgeStatus(): { endpoint: string; phase: string }; getCompanionDirectory(): string; getBrowserWindowMode(): string; getEntryStatus(): { text: string; hasClick: boolean; tooltip: string } }
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<Exports>('myosotis0v0.idle-page');
   assert.ok(extension, 'development extension is registered');
@@ -11,6 +12,12 @@ export async function run(): Promise<void> {
   const commands = await vscode.commands.getCommands(true);
   assert.ok(commands.includes('idlepage.showBrowser'));
   assert.ok(commands.includes('idlepage.hideBrowser'));
+  for (const command of menuCommands) assert.ok(commands.includes(command));
+  assert.equal(api.getEntryStatus().text, '$(book)'); assert.equal(api.getEntryStatus().hasClick, false);
+  const hover = hoverMenu('[bad](command:evil)', true);
+  assert.deepEqual(hover.isTrusted, { enabledCommands: menuCommands });
+  assert.ok(!hover.value.includes('[bad](command:evil)'));
+  assert.ok(hover.value.includes('command:idlepage.refreshAll'));
   assert.equal(api.getBrowserWindowMode(), 'managed');
   const companion = api.getCompanionDirectory();
   const pairing = await readFile(join(companion, 'pairing.js'), 'utf8');
@@ -20,6 +27,7 @@ export async function run(): Promise<void> {
   const id = createHash('sha256').update(Buffer.from(manifest.key, 'base64')).digest('hex').slice(0, 32).split('').map(c => 'abcdefghijklmnop'[parseInt(c, 16)]).join('');
   const endpoint = api.getBridgeStatus().endpoint;
   const headers = { Origin: `chrome-extension://${id}`, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  await vscode.commands.executeCommand('idlepage.restartProbe');
   const first = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
   const report = { state: 'SiteContentVisible', pageKind: 'other', bodyCharacters: 1500, bookLinks: 3, verification: false, tooFrequent: false, captchaFrame: false };
   assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: first.id, report }) })).status, 200);
