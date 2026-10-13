@@ -8,6 +8,11 @@ export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<Exports>('myosotis0v0.idle-page')!;
   const api = await extension.activate();
   await writeFile(join(extension.extensionPath, '.local/live-ready.json'), JSON.stringify({ endpoint: api.getBridgeStatus().endpoint, companionDirectory: api.getCompanionDirectory() }, null, 2));
+  if (process.env.IDLEPAGE_READING_DEMO === '1') {
+    await vscode.commands.executeCommand('workbench.action.positionPanelBottom');
+    await vscode.commands.executeCommand('idlepage.openReadingDemo');
+    await new Promise<void>(() => {}); return;
+  }
   if (process.env.IDLEPAGE_UI_TEST === '1') { await new Promise<void>(() => {}); return; }
   if (process.env.IDLEPAGE_LOGIN_SMOKE === '1') {
     await verifyLoginRecovery(api, extension.extensionPath); await new Promise<void>(() => {}); return;

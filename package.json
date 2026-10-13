@@ -178,6 +178,10 @@
       {
         "command": "idlepage.retryReading",
         "title": "余页: 重试阅读或预取"
+      },
+      {
+        "command": "idlepage.openReadingDemo",
+        "title": "余页: 打开底部阅读演示"
       }
     ],
     "keybindings": [
@@ -201,6 +205,24 @@
         "key": "alt+h",
         "when": "idlepage.reading && !inputFocus"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "idlepage.demo",
+          "title": "余页演示",
+          "icon": "media/book.svg"
+        }
+      ]
+    },
+    "views": {
+      "idlepage.demo": [
+        {
+          "id": "idlepage.readingDemo",
+          "name": "阅读预览",
+          "type": "webview"
+        }
+      ]
+    }
   }
 }

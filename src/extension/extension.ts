@@ -1,3 +1,4 @@
+import { ReadingDemo } from '../ui/ReadingDemo';
 import { StatusReader } from '../ui/StatusReader';
 import { ReadingPrefetch } from '../application/ReadingPrefetch';
 import * as vscode from 'vscode';
@@ -22,6 +23,8 @@ import { openEdgeExtensions, openEdgeCompanion } from '../infrastructure/qidian/
 let bridge: LocalBridgeServer | undefined;
 let stopBrowser: (() => Promise<void>) | undefined;
 export async function activate(context: vscode.ExtensionContext) {
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider('idlepage.readingDemo', new ReadingDemo(), { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.commands.registerCommand('idlepage.openReadingDemo', () => vscode.commands.executeCommand('idlepage.readingDemo.focus')));
   const output = vscode.window.createOutputChannel('IdlePage');
   const reader = new StatusReader(); context.subscriptions.push(reader);
   let prefetch: ReadingPrefetch | undefined;
