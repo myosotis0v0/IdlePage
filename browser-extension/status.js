@@ -9,8 +9,8 @@ async function connect() {
   const state = await chrome.storage.local.get(['workerVersion', 'recoveryVersion']);
   // A development update may leave the old worker resident. Recover once per
   // protocol version, including when that worker cached an obsolete credential.
-  if (state.workerVersion !== 9 && state.recoveryVersion !== 9) {
-    await chrome.storage.local.set({ recoveryVersion: 9 }); chrome.runtime.reload();
+  if (state.workerVersion !== 10 && state.recoveryVersion !== 10) {
+    await chrome.storage.local.set({ recoveryVersion: 10 }); chrome.runtime.reload();
   }
 }
 void connect();

@@ -25,3 +25,18 @@ test('launch failures and replaced tasks end without endless retries', async () 
   const cancelled = new BrowserSession({ launch: async () => { launches++; }, isCurrent: () => false, hasObserved: () => false });
   assert.equal(await cancelled.ensure('old'), 'cancelled'); assert.equal(launches, 0);
 });
+
+test('existing hidden browser is never relaunched on stale contact or task timeout', async () => {
+  let launches = 0;
+  const session = new BrowserSession({ isRunning: async () => true, launch: async () => { launches++; }, isCurrent: () => true, hasObserved: () => false, tickMs: 1, timeoutMs: 5 });
+  assert.equal(await session.ensure('task'), 'connection-timeout');
+  assert.equal(launches, 0);
+});
+test('absent browser launches but uncertain ownership does not', async () => {
+  for (const uncertain of [false, true]) {
+    let launches = 0;
+    const session = new BrowserSession({ isRunning: async () => { if (uncertain) throw new Error('ambiguous'); return false; }, launch: async () => { launches++; }, isCurrent: () => true, hasObserved: () => false, tickMs: 1, timeoutMs: 5 });
+    assert.equal(await session.ensure('task'), uncertain ? 'launch-failed' : 'connection-timeout');
+    assert.equal(launches, uncertain ? 0 : 1);
+  }
+});

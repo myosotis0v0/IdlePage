@@ -1,5 +1,6 @@
 interface BrowserSessionOptions {
   launch(): Promise<void>;
+  isRunning?(): Promise<boolean>;
   isCurrent(taskId: string): boolean;
   hasObserved(taskId: string): boolean;
   onChanged?(): void;
@@ -36,8 +37,12 @@ export class BrowserSession {
       if (this.disposed || !this.options.isCurrent(taskId)) return 'cancelled';
       const now = Date.now();
       if (launchedAt === undefined && now >= launchAt) {
-        this.change('launching');
-        try { await this.options.launch(); launchedAt = Date.now(); }
+        try {
+          const running = await this.options.isRunning?.();
+          if (this.disposed || !this.options.isCurrent(taskId)) return 'cancelled';
+          if (!running) { this.change('launching'); await this.options.launch(); }
+          launchedAt = Date.now();
+        }
         catch { this.change('failed'); return 'launch-failed'; }
       }
       if (launchedAt !== undefined && now - launchedAt >= timeout) { this.change('failed'); return 'connection-timeout'; }

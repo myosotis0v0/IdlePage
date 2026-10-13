@@ -179,7 +179,11 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     // Do not overwrite a running window's paired copy when binding fails.
     const companion = await prepareCompanion(context.extensionPath, storage, bridge.endpoint(), token);
-    browserSession = new BrowserSession({ launch: async () => {
+    browserSession = new BrowserSession({ isRunning: async () => {
+      const result = await new EdgeWindowControl().control('inspect');
+      if (['failed', 'ambiguous'].includes(result.status)) throw new Error('BrowserInspectionFailed');
+      return result.status !== 'not-running';
+    }, launch: async () => {
       await lifetime.launch(() => openEdgeCompanion(origin));
       void visibility.requestHide();
     }, isCurrent: id => probe.isCurrentTask(id), hasObserved: id => probe.hasObservedTask(id), onChanged: update });

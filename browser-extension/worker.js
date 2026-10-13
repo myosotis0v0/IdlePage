@@ -14,6 +14,24 @@ async function removeOwned(record) {
   if (actual.origin !== expected.origin || actual.pathname.replace(/\/$/, '') !== expected.pathname.replace(/\/$/, '')) return;
   await chrome.tabs.remove(record.id);
 }
+// Keep one verified bookshelf independently from the bounded reading task tabs.
+async function retireOwned(record) {
+  if (record?.confirmed && ['bookshelf', 'bookshelf-list'].includes(record.kind)) {
+    const { retainedShelf } = await chrome.storage.local.get('retainedShelf');
+    if (retainedShelf?.id !== record.id) await removeOwned(retainedShelf);
+    await chrome.storage.local.set({ retainedShelf: record });
+  } else await removeOwned(record);
+}
+async function applyBookSelection(revision) {
+  const { bookSelectionRevision, managedTabs } = await chrome.storage.local.get(['bookSelectionRevision', 'managedTabs']);
+  if (!Number.isSafeInteger(revision) || revision === bookSelectionRevision) return;
+  if (revision > 0 && managedTabs) {
+    await retireOwned(managedTabs.previous);
+    await retireOwned(managedTabs.current);
+    await chrome.storage.local.set({ managedTabs: null, activeTask: null, taskTabSummary: { count: 0 } });
+  }
+  await chrome.storage.local.set({ bookSelectionRevision: revision });
+}
 async function settleTabs(tabId, failed = false) {
   const { managedTabs } = await chrome.storage.local.get('managedTabs');
   if (managedTabs?.current?.id !== tabId) return;
@@ -21,8 +39,8 @@ async function settleTabs(tabId, failed = false) {
     await removeOwned(managedTabs.current);
     await chrome.storage.local.set({ managedTabs: { current: managedTabs.previous ?? null, previous: null }, taskTabSummary: { count: managedTabs.previous ? 1 : 0 } });
   } else {
-    await removeOwned(managedTabs.previous);
-    await chrome.storage.local.set({ managedTabs: { current: managedTabs.current, previous: null }, taskTabSummary: { count: 1 } });
+    await retireOwned(managedTabs.previous);
+    await chrome.storage.local.set({ managedTabs: { current: { ...managedTabs.current, confirmed: true }, previous: null }, taskTabSummary: { count: 1 } });
   }
 }
 async function refreshPairing() {
@@ -52,6 +70,8 @@ async function poll() {
     // Privileged extension GET fetches can omit Origin; POST carries the extension Origin.
     const state = await request('/v1/tasks/next', { method: 'POST', body: '{}' });
     await chrome.storage.local.set({ connection: 'connected', connectionError: null, phase: state.phase, serverReport: state.report ?? null });
+    if (epoch !== navigationEpoch) return;
+    await applyBookSelection(state.bookSelectionRevision);
     const task = state.task;
     if (!task) {
       const { managedTabs } = await chrome.storage.local.get('managedTabs');
@@ -65,14 +85,14 @@ async function poll() {
     if ((!safeCatalog && !safeChapter && !['https://www.qidian.com/', 'https://my.qidian.com/bookcase/'].includes(task.url)) || typeof task.id !== 'string') return;
     const { activeTask, managedTabs } = await chrome.storage.local.get(['activeTask', 'managedTabs']);
     if (epoch !== navigationEpoch) return;
-    if (activeTask?.id === task.id && activeTask.protocolVersion === 6) {
+    if (activeTask?.id === task.id && activeTask.protocolVersion === 7) {
       try { await chrome.tabs.get(activeTask.tabId); return; }
       catch { if (state.report?.state === 'AccessBlocked') return; }
     }
-    await removeOwned(managedTabs?.previous);
+    await retireOwned(managedTabs?.previous);
     const tab = await chrome.tabs.create({ url: task.url, active: task.kind === 'login' });
     if (epoch !== navigationEpoch) { await chrome.tabs.remove(tab.id); return; }
-    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 6, attentionShown: task.kind === 'login' },
+    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 7, attentionShown: task.kind === 'login' },
       managedTabs: { current: { id: tab.id, url: task.url, kind: task.kind }, previous: managedTabs?.current ?? null },
       taskTabSummary: { count: managedTabs?.current ? 2 : 1 } });
   } catch (error) {
@@ -144,7 +164,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'idlepage-bridge') void poll(); });
 async function initialize() {
-  await chrome.storage.local.set({ workerVersion: 9 });
+  await chrome.storage.local.set({ workerVersion: 10 });
   await chrome.alarms.create('idlepage-bridge', { periodInMinutes: 0.5 });
   await poll();
 }
@@ -157,7 +177,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   navigationEpoch++;
   void (async () => {
-    await chrome.storage.local.set({ activeTask: null, managedTabs: null, taskTabSummary: { count: 0 } });
+    await chrome.storage.local.set({ activeTask: null, managedTabs: null, retainedShelf: null, bookSelectionRevision: null, taskTabSummary: { count: 0 } });
     // A startup can invalidate an in-flight initialization poll.
     while (running) await new Promise(resolve => setTimeout(resolve, 25));
     await initialize();

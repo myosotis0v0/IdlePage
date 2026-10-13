@@ -237,3 +237,28 @@ test('managed chapter tabs stay at one after success, two in transit, and restor
   h.probe.startNextChapter(); await h.poll(); await complete(3);
   assert.equal(h.closed.has(old), false); assert.equal(h.data.taskTabSummary.count, 1);
 });
+
+test('switching to cached book retires reading tabs but retains bookshelf without creating tabs', async t => {
+  const h = await harness(t);
+  await h.emit();
+  const shelfTab = h.data.activeTask.tabId;
+  await h.emit({ ...visible, pageKind: 'bookshelf' }, { url: 'https://my.qidian.com/bookcase/' });
+  const shelf = { books: ['100', '200'].map(id => ({ id, title: 'Fixture', url: `https://www.qidian.com/book/${id}/` })), strategy: 'table' as const, anchorCount: 2, truncated: false, pagination: 'not-detected' as const, containerHints: [] };
+  const catalog = (id: string) => ({ bookId: id, total: 1, declaredCount: 1, truncated: false, strategy: 'catalog-container' as const, chapters: [{ id: '1', title: 'Fixture', volume: '', payment: 'unknown' as const, url: `https://www.qidian.com/chapter/${id}/1/` }] });
+  h.probe.restoreMetadata(shelf, catalog('100'));
+  h.probe.selectBook('100', catalog('100')); await h.poll();
+  assert.equal(h.closed.has(shelfTab), false);
+  assert.equal(h.data.retainedShelf.id, shelfTab);
+  h.probe.selectChapter('100', '1'); await h.poll();
+  const chapterTab = h.data.activeTask.tabId;
+  await h.emitChapter({ status: 'available', offset: 0, total: 4, text: 'body' });
+  const created = h.tabs.length;
+  h.probe.selectBook('200', catalog('200')); await h.poll();
+  assert.equal(h.tabs.length, created);
+  assert.equal(h.closed.has(chapterTab), true);
+  assert.equal(h.closed.has(shelfTab), false);
+  assert.equal(h.data.managedTabs, null);
+  h.probe.selectChapter('200', '1'); await h.poll();
+  assert.equal(h.tabs.at(-1)?.active, false);
+  assert.equal(h.closed.has(shelfTab), false);
+});

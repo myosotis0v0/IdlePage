@@ -49,8 +49,10 @@ export class QidianAccessProbe {
     this.chapterGoal = false; this.phase = 'idle';
   }
   readingLocation() { return { bookId: this.readingCatalog?.bookId, chapterId: this.readingCatalog?.chapters[this.currentChapterIndex]?.id }; }
+  private bookSelectionRevision = 0;
   selectBook(bookId: string, cached?: CatalogResult): boolean {
     if (!this.bookshelf?.books.some(book => book.id === bookId)) return false;
+    this.bookSelectionRevision++;
     this.resetRecovery(); this.chapterGoal = false; this.catalogGoal = false;
     this.chapter = undefined; this.chapterText = ''; this.chapterDeadline = 0; this.report = undefined;
     if (cached?.bookId === bookId && cached.chapters.length === cached.total && cached.total > 0) {
@@ -270,7 +272,7 @@ export class QidianAccessProbe {
   getCatalog(): CatalogResult | undefined { return this.catalog ? structuredClone(this.catalog) : undefined; }
   getBookshelf(): BookshelfPage | undefined { return this.bookshelf ? structuredClone(this.bookshelf) : undefined; }
   snapshot() {
-    return { phase: this.phase, recovery: { waitingLogin: !!this.suspended, resumed: this.recovered }, failure: this.failure, chapterSource: this.chapterSource, lastSeenAt: this.lastSeenAt, report: this.report ? { ...this.report } : undefined,
+    return { phase: this.phase, bookSelectionRevision: this.bookSelectionRevision, recovery: { waitingLogin: !!this.suspended, resumed: this.recovered }, failure: this.failure, chapterSource: this.chapterSource, lastSeenAt: this.lastSeenAt, report: this.report ? { ...this.report } : undefined,
       chapterNavigation: { current: this.currentChapterIndex + 1, total: (this.readingCatalog ?? this.catalog)?.chapters.length ?? 0, busy: !!this.task, canNext: !this.task && !!this.readingChapter && this.currentChapterIndex + 1 < (this.readingCatalog?.chapters.length ?? 0) },
       chapterSummary: this.chapter ? this.chapter.status === 'available' ? { status: 'available', characters: this.chapter.text.length } : { ...this.chapter } : undefined,
       chapterDiagnostics: this.chapterDiagnostics,
