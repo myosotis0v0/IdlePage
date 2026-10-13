@@ -21,7 +21,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
   const probe = new QidianAccessProbe();
   const bridge = new LocalBridgeServer({ port: 0, token, origin, probe });
   await bridge.start(); t.after(() => bridge.close());
-  const network = { online };
+  const network = { online, wrongToken: false };
   const chrome = {
     storage: { local: {
       async get(key: string) { return { [key]: structuredClone(data[key]) }; },
@@ -46,8 +46,8 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
   const context: Record<string, any> = { endpoint: bridge.endpoint(), token, chrome, URL, AbortSignal,
     fetch: async (url: string, options: RequestInit) => {
       if (!network.online) throw new Error('offline');
-      // Simulate the extension Origin; browser acceptance is a separate live check.
-      return fetch(url, { ...options, headers: { ...options.headers, Origin: origin } });
+      // Chromium privileged GET omits Origin; POST attaches the extension Origin.
+      return fetch(url, { ...options, headers: { ...options.headers, ...(options.method === 'POST' ? { Origin: origin } : {}), ...(network.wrongToken ? { Authorization: 'Bearer wrong' } : {}) } });
     },
   };
   runInNewContext(source + '\nglobalThis.__pollForTest = poll;', context);
@@ -75,8 +75,10 @@ test('production companion and real HTTP server complete tasks without extractio
 test('offline polling reconnects and closed task tab recovers automatically', async t => {
   const h = await harness(t, false);
   assert.equal(h.tabs.length, 0);
+  assert.equal(h.data.connectionError, 'BridgeNetworkError');
   h.network.online = true; await h.poll();
   await until(() => !!h.data.activeTask);
+  assert.equal(h.data.connectionError, null);
   const id = h.data.activeTask.id;
   h.closed.add(h.data.activeTask.tabId); await h.poll();
   await until(() => h.tabs.length === 2);
@@ -97,5 +99,18 @@ test('challenge does not reload site or repeatedly focus; rejects foreign sender
   await until(() => h.data.connection === 'connected');
   assert.equal(h.data.report.state, 'AccessBlocked');
   assert.equal(h.probe.nextTask()?.kind, 'access');
+  assert.equal(h.tabs.length, 1);
+});
+test('authentication errors are visible and cleared on successful reconnection', async t => {
+  const h = await harness(t);
+  h.network.wrongToken = true;
+  await h.poll();
+  assert.equal(h.data.connection, 'disconnected');
+  assert.equal(h.data.connectionError, 'BridgeStatus401');
+  assert.equal(h.tabs.length, 1);
+  h.network.wrongToken = false;
+  await h.poll();
+  assert.equal(h.data.connection, 'connected');
+  assert.equal(h.data.connectionError, null);
   assert.equal(h.tabs.length, 1);
 });

@@ -29,7 +29,11 @@ test('loopback API enforces pairing, host, preflight, payload limits and task id
   assert.equal((await post('{')).status, 400);
   assert.equal((await post(JSON.stringify({ taskId: 'x', report: visible, cookie: 'not-allowed' }))).status, 400);
   assert.equal((await post(' '.repeat(17000))).status, 413);
-  const first = (await (await get()).json()).task;
+  const next = await fetch(bridge.endpoint() + '/v1/tasks/next', { method: 'POST', headers, body: '{}' });
+  assert.equal(next.status, 200);
+  const first = (await next.json()).task;
+  assert.equal((await fetch(bridge.endpoint() + '/v1/tasks/next', { method: 'POST', headers, body: '[]' })).status, 400);
+  assert.equal((await fetch(bridge.endpoint() + '/v1/tasks/next', { method: 'POST', headers, body: '{"taskId":"unexpected"}' })).status, 400);
   assert.equal((await post(JSON.stringify({ taskId: first.id, report: { ...visible, bodyCharacters: -1 } }))).status, 400);
   assert.equal((await post(JSON.stringify({ taskId: first.id, report: { ...visible, tooFrequent: true } }))).status, 200);
   assert.equal((await (await get()).json()).task.id, first.id);

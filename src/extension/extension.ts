@@ -35,7 +35,12 @@ export async function activate(context: vscode.ExtensionContext) {
     if (!token) { token = randomBytes(32).toString('hex'); await context.secrets.store('idlepage.bridge.token', token); }
     const port = vscode.workspace.getConfiguration('idlepage').get<number>('bridge.port', 17655);
     const origin = await readCompanionOrigin(context.extensionPath);
-    bridge = new LocalBridgeServer({ port, token, origin, probe, onChanged: update });
+    bridge = new LocalBridgeServer({ port, token, origin, probe, onChanged: update,
+      onRejected: (reason, method) => {
+        // Coarse diagnostic only: never record headers, credentials, bodies or account information.
+        void writeFile(join(storage, 'bridge-diagnostics.json'), JSON.stringify({ reason, method, observedAt: new Date().toISOString() })).catch(() => {});
+      },
+    });
     await bridge.start();
     // Do not overwrite a running window's paired copy when binding fails.
     const companion = await prepareCompanion(context.extensionPath, storage, bridge.endpoint(), token);

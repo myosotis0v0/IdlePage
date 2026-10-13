@@ -16,10 +16,10 @@ export async function run(): Promise<void> {
   const id = createHash('sha256').update(Buffer.from(manifest.key, 'base64')).digest('hex').slice(0, 32).split('').map(c => 'abcdefghijklmnop'[parseInt(c, 16)]).join('');
   const endpoint = api.getBridgeStatus().endpoint;
   const headers = { Origin: `chrome-extension://${id}`, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  const first = (await (await fetch(endpoint + '/v1/tasks/next', { headers })).json()).task;
+  const first = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
   const report = { state: 'SiteContentVisible', pageKind: 'other', bodyCharacters: 1500, bookLinks: 3, verification: false, tooFrequent: false, captchaFrame: false };
   assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: first.id, report }) })).status, 200);
-  const shelf = (await (await fetch(endpoint + '/v1/tasks/next', { headers })).json()).task;
+  const shelf = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
   assert.equal(shelf.kind, 'bookshelf');
   assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: shelf.id, report: { ...report, pageKind: 'bookshelf' } }) })).status, 200);
   assert.equal(api.getBridgeStatus().phase, 'probe-complete');

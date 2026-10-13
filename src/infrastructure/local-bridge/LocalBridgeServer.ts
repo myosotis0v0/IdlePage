@@ -1,4 +1,4 @@
-﻿import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { QidianAccessProbe } from '../../application/QidianAccessProbe';
 
@@ -8,6 +8,7 @@ interface BridgeOptions {
   origin: string;
   probe: QidianAccessProbe;
   onChanged?: () => void;
+  onRejected?: (reason: 'HostMismatch' | 'OriginMissing' | 'OriginMismatch' | 'Unauthorized', method: string) => void;
 }
 export class LocalBridgeServer {
   private server?: Server;
@@ -50,6 +51,9 @@ export class LocalBridgeServer {
   }
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (req.headers.host !== `127.0.0.1:${this.actualPort}` || req.headers.origin !== this.options.origin) {
+      const reason = req.headers.host !== `127.0.0.1:${this.actualPort}` ? 'HostMismatch' :
+        req.headers.origin === undefined ? 'OriginMissing' : 'OriginMismatch';
+      this.options.onRejected?.(reason, ['GET', 'POST', 'OPTIONS'].includes(req.method ?? '') ? req.method! : 'other');
       this.reply(res, 403, { error: 'ForbiddenOrigin' }); return;
     }
     res.setHeader('Access-Control-Allow-Origin', this.options.origin);
@@ -65,6 +69,7 @@ export class LocalBridgeServer {
     const actual = Buffer.from(req.headers.authorization ?? '');
     const expected = Buffer.from(`Bearer ${this.options.token}`);
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      this.options.onRejected?.('Unauthorized', ['GET', 'POST', 'OPTIONS'].includes(req.method ?? '') ? req.method! : 'other');
       this.reply(res, 401, { error: 'Unauthorized' }); return;
     }
     if (req.method === 'GET' && req.url === '/v1/tasks/next') {
@@ -74,7 +79,7 @@ export class LocalBridgeServer {
     if (req.method === 'GET' && req.url === '/v1/status') {
       this.reply(res, 200, this.options.probe.snapshot()); return;
     }
-    if (req.method !== 'POST' || req.url !== '/v1/tasks/result') {
+    if (req.method !== 'POST' || !['/v1/tasks/result', '/v1/tasks/next'].includes(req.url ?? '')) {
       this.reply(res, 404, { error: 'UnknownRoute' }); return;
     }
     if ((req.headers['content-type'] ?? '').split(';')[0].trim() !== 'application/json') {
@@ -90,8 +95,13 @@ export class LocalBridgeServer {
     let input: { taskId?: unknown; report?: unknown };
     try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
     catch { this.reply(res, 400, { error: 'InvalidJson' }); return; }
-    if (!input || typeof input !== 'object' || Object.keys(input).some(key => !['taskId', 'report'].includes(key))) {
+    if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(key => !['taskId', 'report'].includes(key))) {
       this.reply(res, 400, { error: 'InvalidPayload' }); return;
+    }
+    if (req.url === '/v1/tasks/next') {
+      if (Object.keys(input).length) { this.reply(res, 400, { error: 'ExpectedEmptyPayload' }); return; }
+      const task = this.options.probe.nextTask(); this.options.onChanged?.();
+      this.reply(res, 200, { task, ...this.options.probe.snapshot() }); return;
     }
     const result = this.options.probe.accept(input.taskId, input.report);
     if (result !== 'accepted') {

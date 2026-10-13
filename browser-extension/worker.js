@@ -14,8 +14,9 @@ async function poll() {
   if (running) return;
   running = true;
   try {
-    const state = await request('/v1/tasks/next');
-    await chrome.storage.local.set({ connection: 'connected', phase: state.phase, serverReport: state.report ?? null });
+    // Privileged extension GET fetches can omit Origin; POST carries the extension Origin.
+    const state = await request('/v1/tasks/next', { method: 'POST', body: '{}' });
+    await chrome.storage.local.set({ connection: 'connected', connectionError: null, phase: state.phase, serverReport: state.report ?? null });
     const task = state.task;
     if (!task) { await chrome.storage.local.set({ activeTask: null }); return; }
     if (!['https://www.qidian.com/', 'https://my.qidian.com/bookcase/'].includes(task.url) || typeof task.id !== 'string') return;
@@ -26,8 +27,10 @@ async function poll() {
     }
     const tab = await chrome.tabs.create({ url: task.url, active: task.kind === 'access' });
     await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id } });
-  } catch {
-    await chrome.storage.local.set({ connection: 'disconnected' });
+  } catch (error) {
+    const code = /^BridgeStatus\d{3}$/.test(error?.message ?? '') ? error.message :
+      error?.name === 'TimeoutError' ? 'BridgeTimeout' : 'BridgeNetworkError';
+    await chrome.storage.local.set({ connection: 'disconnected', connectionError: code });
   } finally { running = false; }
 }
 async function handleObservation(message, sender) {
