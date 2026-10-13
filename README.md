@@ -40,7 +40,7 @@ npm run build
 ## 接入起点中文网
 
 1. 在命令面板运行 `IdlePage: 准备浏览器连接`，打开专用 Edge 的扩展管理页并复制本机配对目录。
-2. 在 Edge 开启开发人员模式，加载剪贴板中的目录，确认扩展名称为 **IdlePage Browser Companion**。不要直接加载源码中的 `browser-extension/`，它不含本机配对配置。若装有旧的 **IdlePage Qidian Access Probe**，请停用它。
+2. 在 Edge 开启开发人员模式，加载剪贴板中的目录，确认扩展名称为 **IdlePage Browser Companion**。不要直接加载源码中的 `browser-extension/`，它不含本机配对配置。
 3. 在 VS Code 运行 `IdlePage: 重新验证接入`。需要登录时，在专用 Edge 的起点官方页面手动登录。
 4. 使用书单、目录和正文命令读取内容；伴随扩展自动执行页面访问和提取，无需手动打开章节或点击提取。
 

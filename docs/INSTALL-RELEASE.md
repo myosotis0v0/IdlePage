@@ -13,7 +13,7 @@
 1. 在 VS Code 命令面板运行 **IdlePage: 准备浏览器连接**。
 2. 插件自动生成本机配对目录、将路径复制到剪贴板，并打开专用 Edge 扩展管理页。
 3. 在这个专用 Edge 窗口开启“开发人员模式”，点击“加载解压缩的扩展”，粘贴并选择刚才复制的目录。
-4. 确认名称为 **IdlePage Browser Companion**；停用旧的 **IdlePage Qidian Access Probe**。
+4. 确认名称为 **IdlePage Browser Companion**。
 5. 回到 VS Code，运行 **IdlePage: 重新验证接入**，需要时在专用浏览器的官方页面手动登录。
 
 **不要直接加载发布包的 `browser-extension-template` 目录。** 它是与 VSIX 内置内容一致的无凭据模板，供分发和检查；真正安装的版本由步骤 1 在本机生成。无需手动填写 Token、Cookie 或复制浏览器登录数据。不要上传生成的配对目录或浏览器用户目录。
