@@ -9,7 +9,7 @@ const log = await open(join(root, '.local/vscode-live.log'), 'a');
 const child = spawn(join(process.env.LOCALAPPDATA, 'Programs/Microsoft VS Code/Code.exe'), [
   root, '--new-window', '--extensionDevelopmentPath=' + root, '--extensionTestsPath=' + join(root, 'out/tests/live.cjs'),
   '--user-data-dir=' + join(root, '.local/vscode-live-user'), '--extensions-dir=' + join(root, '.local/vscode-live-extensions'),
-  '--skip-welcome', '--skip-release-notes', '--disable-workspace-trust', '--disable-extensions',
+  '--skip-welcome', '--skip-release-notes', '--disable-workspace-trust',
 ], { env, detached: true, stdio: ['ignore', log.fd, log.fd] });
 await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
 child.unref();

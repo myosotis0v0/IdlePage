@@ -53,6 +53,12 @@
           "description": "本机浏览器连接端口，修改后需重启插件并重新加载配对的浏览器扩展。",
           "type": "integer",
           "scope": "machine"
+        },
+        "idlepage.browser.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine",
+          "description": "发起阅读或接入任务时自动启动专用 Edge，并等待浏览器辅助扩展执行任务。"
         }
       },
       "title": "IdlePage"

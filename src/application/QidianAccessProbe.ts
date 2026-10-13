@@ -22,6 +22,10 @@ export class QidianAccessProbe {
   private chapterDiagnostics?: { paragraphs: number; containers: string[]; annotationNodes?: string[] };
   private phase = 'waiting-access';
   private lastSeenAt?: string;
+  private observedTaskId?: string;
+  hasObservedTask(taskId: string): boolean { return this.observedTaskId === taskId; }
+  isCurrentTask(taskId: string): boolean { return this.task?.id === taskId; }
+  currentTaskId(): string | undefined { return this.task?.id; }
 
   private createTask(kind: BrowserTask['kind']): BrowserTask {
     return { id: randomUUID(), kind, url: kind === 'access' ? 'https://www.qidian.com/' : 'https://my.qidian.com/bookcase/' };
@@ -35,6 +39,7 @@ export class QidianAccessProbe {
     if (!this.task || taskId !== this.task.id) return 'stale';
     const observation = parseObservation(value);
     if (!observation) return 'invalid';
+    this.observedTaskId = this.task.id;
     this.lastSeenAt = new Date().toISOString();
     this.report = { ...observation, taskKind: this.task.kind, observedAt: this.lastSeenAt };
     if (this.task.kind === 'chapter' && ['AccessBlocked', 'NeedsLogin'].includes(observation.state)) {

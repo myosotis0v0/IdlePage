@@ -8,7 +8,7 @@ const vscodeExecutablePath = join(process.env.LOCALAPPDATA, 'Programs', 'Microso
 await access(vscodeExecutablePath);
 const user = join(root, '.local/vscode-test-user/User');
 await mkdir(user, { recursive: true });
-await writeFile(join(user, 'settings.json'), JSON.stringify({ 'idlepage.bridge.port': 17656 }));
+await writeFile(join(user, 'settings.json'), JSON.stringify({ 'idlepage.bridge.port': 17656, 'idlepage.browser.autoStart': false }));
 await runTests({
   vscodeExecutablePath,
   extensionDevelopmentPath: root,

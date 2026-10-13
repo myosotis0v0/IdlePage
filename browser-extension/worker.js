@@ -1,12 +1,24 @@
 import { endpoint, token } from './pairing.js';
 
+let activeEndpoint = endpoint;
+let activeToken = token;
 let running = false;
 let messages = Promise.resolve();
+async function refreshPairing() {
+  const response = await fetch(chrome.runtime.getURL('pairing.json'), { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+  if (!response.ok) throw new Error('InvalidPairing');
+  const data = await response.json();
+  if (!data || Object.keys(data).some(k => !['endpoint', 'token'].includes(k)) || !/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(data.endpoint ?? '') ||
+      Number(new URL(data.endpoint).port) < 1 || Number(new URL(data.endpoint).port) > 65535 || !/^[a-f0-9]{64}$/.test(data.token ?? '')) throw new Error('InvalidPairing');
+  activeEndpoint = data.endpoint; activeToken = data.token;
+}
 async function request(path, options = {}) {
-  const response = await fetch(endpoint + path, {
-    ...options, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  const send = () => fetch(activeEndpoint + path, {
+    ...options, headers: { Authorization: `Bearer ${activeToken}`, 'Content-Type': 'application/json' },
     signal: AbortSignal.timeout(5000),
   });
+  let response = await send();
+  if (response.status === 401) { await refreshPairing(); response = await send(); }
   if (!response.ok) throw new Error(`BridgeStatus${response.status}`);
   return response.json();
 }
@@ -14,6 +26,7 @@ async function poll() {
   if (running) return;
   running = true;
   try {
+    await refreshPairing();
     // Privileged extension GET fetches can omit Origin; POST carries the extension Origin.
     const state = await request('/v1/tasks/next', { method: 'POST', body: '{}' });
     await chrome.storage.local.set({ connection: 'connected', connectionError: null, phase: state.phase, serverReport: state.report ?? null });
@@ -76,6 +89,9 @@ async function handleObservation(message, sender) {
   return { accepted: true, bookshelfRequested: activeTask.kind === 'bookshelf-list', catalogRequested: activeTask.kind === 'catalog', chapterRequested: activeTask.kind === 'chapter', bookId: activeTask.bookId };
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === 'idlepage-connect' && sender.url?.split('?')[0] === chrome.runtime.getURL('status.html')) {
+    void poll().then(() => respond({ accepted: true })); return true;
+  }
   if (!['idlepage-observation', 'idlepage-bookshelf', 'idlepage-catalog', 'idlepage-chapter', 'idlepage-chapter-diagnostics'].includes(message?.type) || sender.frameId !== 0 || !sender.tab) return;
   let url;
   try { url = new URL(sender.url); } catch { return; }
@@ -89,6 +105,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'idlepage-bridge') void poll(); });
 async function initialize() {
+  await chrome.storage.local.set({ workerVersion: 5 });
   await chrome.alarms.create('idlepage-bridge', { periodInMinutes: 0.5 });
   await poll();
 }

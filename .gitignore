@@ -29,3 +29,4 @@ test-results/
 
 # Pairing credentials exist only in generated private copies
 browser-extension/pairing.js
+browser-extension/pairing.json

@@ -8,6 +8,7 @@ interface BridgeOptions {
   origin: string;
   probe: QidianAccessProbe;
   onChanged?: () => void;
+  onContact?: () => void;
   onRejected?: (reason: 'HostMismatch' | 'OriginMissing' | 'OriginMismatch' | 'Unauthorized', method: string) => void;
 }
 export class LocalBridgeServer {
@@ -73,6 +74,7 @@ export class LocalBridgeServer {
       this.reply(res, 401, { error: 'Unauthorized' }); return;
     }
     if (req.method === 'GET' && req.url === '/v1/tasks/next') {
+      this.options.onContact?.();
       const task = this.options.probe.nextTask(); this.options.onChanged?.();
       this.reply(res, 200, { task, ...this.options.probe.snapshot() }); return;
     }
@@ -100,6 +102,7 @@ export class LocalBridgeServer {
     }
     if (req.url === '/v1/tasks/next') {
       if (Object.keys(input).length) { this.reply(res, 400, { error: 'ExpectedEmptyPayload' }); return; }
+      this.options.onContact?.();
       const task = this.options.probe.nextTask(); this.options.onChanged?.();
       this.reply(res, 200, { task, ...this.options.probe.snapshot() }); return;
     }

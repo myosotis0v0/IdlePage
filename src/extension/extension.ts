@@ -6,9 +6,10 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { QidianAccessProbe } from '../application/QidianAccessProbe';
+import { BrowserSession } from '../application/BrowserSession';
 import { LocalBridgeServer } from '../infrastructure/local-bridge/LocalBridgeServer';
-import { prepareCompanion, readCompanionOrigin } from '../infrastructure/local-bridge/prepareCompanion';
-import { openEdgeExtensions } from '../infrastructure/qidian/openEdgeExtensions';
+import { prepareCompanion, readCompanionOrigin, readExistingPairingToken } from '../infrastructure/local-bridge/prepareCompanion';
+import { openEdgeExtensions, openEdgeCompanion } from '../infrastructure/qidian/openEdgeExtensions';
 
 let bridge: LocalBridgeServer | undefined;
 export async function activate(context: vscode.ExtensionContext) {
@@ -19,6 +20,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(output, status);
   const storage = context.globalStorageUri.fsPath;
   const probe = new QidianAccessProbe();
+  let browserSession: BrowserSession | undefined;
   let reportWrites = Promise.resolve();
   let lastDisplay = '';
   let bookshelfShown = false;
@@ -58,9 +60,10 @@ export async function activate(context: vscode.ExtensionContext) {
     chapterPanel.webview.html = chapterPreview(reading ?? result!, reading ? probe.snapshot().chapterNavigation : undefined, notice); chapterPanel.reveal();
   };
   const update = () => {
-    const snapshot = probe.snapshot();
+    const snapshot = { ...probe.snapshot(), browserConnection: browserSession?.state };
     const state = snapshot.report?.state;
     const display = state === 'AccessBlocked' ? '访问受阻' : state === 'NeedsLogin' ? '需要登录' :
+      browserSession?.state === 'failed' ? '浏览器连接失败' :
       snapshot.phase === 'chapter-preview-ready' ? `正文 ${snapshot.chapterSummary?.characters ?? 0} 字符待核对` :
       snapshot.phase === 'chapter-unavailable' ? '正文暂不可获取' :
       ['waiting-chapter', 'receiving-chapter'].includes(snapshot.phase) ? '正在获取正文' :
@@ -83,11 +86,16 @@ export async function activate(context: vscode.ExtensionContext) {
   };
   try {
     await mkdir(storage, { recursive: true });
-    let token = await context.secrets.get('idlepage.bridge.token');
-    if (!token) { token = randomBytes(32).toString('hex'); await context.secrets.store('idlepage.bridge.token', token); }
+    const secretToken = await context.secrets.get('idlepage.bridge.token');
+    // Preserve the credential already installed in this window's private paired
+    // copy, including when isolated host SecretStorage is not restored.
+    let token = await readExistingPairingToken(storage) ?? secretToken;
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) token = randomBytes(32).toString('hex');
+    if (secretToken !== token) await context.secrets.store('idlepage.bridge.token', token);
     const port = vscode.workspace.getConfiguration('idlepage').get<number>('bridge.port', 17655);
     const origin = await readCompanionOrigin(context.extensionPath);
     bridge = new LocalBridgeServer({ port, token, origin, probe, onChanged: update,
+      onContact: () => browserSession?.noteContact(),
       onRejected: (reason, method) => {
         // Coarse diagnostic only: never record headers, credentials, bodies or account information.
         void writeFile(join(storage, 'bridge-diagnostics.json'), JSON.stringify({ reason, method, observedAt: new Date().toISOString() })).catch(() => {});
@@ -96,6 +104,16 @@ export async function activate(context: vscode.ExtensionContext) {
     await bridge.start();
     // Do not overwrite a running window's paired copy when binding fails.
     const companion = await prepareCompanion(context.extensionPath, storage, bridge.endpoint(), token);
+    browserSession = new BrowserSession({ launch: () => openEdgeCompanion(origin), isCurrent: id => probe.isCurrentTask(id), hasObserved: id => probe.hasObservedTask(id), onChanged: update });
+    context.subscriptions.push({ dispose: () => browserSession?.dispose() });
+    const ensureBrowser = () => {
+      const id = probe.currentTaskId();
+      if (!id || !vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoStart', true)) return;
+      void browserSession!.ensure(id).then(result => {
+        if (result === 'launch-failed') void vscode.window.showWarningMessage('无法启动专用 Edge，请确认 Microsoft Edge 已安装。当前正文已保留。');
+        if (result === 'connection-timeout') void vscode.window.showWarningMessage('浏览器未能执行任务。请检查专用 Edge 中 IdlePage Browser Companion 是否已安装并启用；首次安装请运行“准备浏览器连接”。当前正文已保留。');
+      });
+    };
     update();
     output.appendLine(`本机服务：${bridge.endpoint()}`);
     output.appendLine(`浏览器辅助扩展目录：${companion.directory}`);
@@ -111,19 +129,19 @@ export async function activate(context: vscode.ExtensionContext) {
           void vscode.window.showInformationMessage('浏览器扩展目录已复制。在 Edge 开发人员模式中加载该目录；安装后自动连接。');
         } catch { void vscode.window.showErrorMessage('无法打开 Edge，请手动在普通 Edge 中加载 IdlePage 浏览器辅助扩展。'); output.show(true); }
       }),
-      vscode.commands.registerCommand('idlepage.restartProbe', () => { probe.restart(); update(); }),
-      vscode.commands.registerCommand('idlepage.extractBookshelf', () => { bookshelfShown = false; probe.startBookshelfExtraction(); update(); }),
+      vscode.commands.registerCommand('idlepage.restartProbe', () => { probe.restart(); update(); ensureBrowser(); }),
+      vscode.commands.registerCommand('idlepage.extractBookshelf', () => { bookshelfShown = false; probe.startBookshelfExtraction(); update(); ensureBrowser(); }),
       vscode.commands.registerCommand('idlepage.showBookshelf', showBookshelf),
-      vscode.commands.registerCommand('idlepage.extractCatalog', () => { catalogShown = false; probe.startCatalogExtraction(); update(); }),
+      vscode.commands.registerCommand('idlepage.extractCatalog', () => { catalogShown = false; probe.startCatalogExtraction(); update(); ensureBrowser(); }),
       vscode.commands.registerCommand('idlepage.showCatalog', showCatalog),
-      vscode.commands.registerCommand('idlepage.extractChapter', () => { chapterShown = false; probe.startChapterExtraction(); update(); }),
+      vscode.commands.registerCommand('idlepage.extractChapter', () => { chapterShown = false; probe.startChapterExtraction(); update(); ensureBrowser(); }),
       vscode.commands.registerCommand('idlepage.showChapter', showChapter),
       vscode.commands.registerCommand('idlepage.nextChapter', () => {
         const result = probe.startNextChapter();
         if (result !== 'started') {
           void vscode.window.showInformationMessage({ busy: '正在获取章节，请稍候。', 'not-ready': '请先获取当前章正文。', end: '本次目录没有下一章。' }[result]); return result;
         }
-        chapterShown = false; showChapter(); update(); return result;
+        chapterShown = false; showChapter(); update(); ensureBrowser(); return result;
       }),
     );
     const expiryTimer = setInterval(() => { if (probe.expireChapter()) update(); }, 1000);

@@ -7,7 +7,6 @@ export async function run(): Promise<void> {
   const api = await extension.activate();
   await writeFile(join(extension.extensionPath, '.local/live-ready.json'), JSON.stringify({ endpoint: api.getBridgeStatus().endpoint, companionDirectory: api.getCompanionDirectory() }, null, 2));
   await vscode.commands.executeCommand('idlepage.extractChapter');
-  await vscode.commands.executeCommand('idlepage.prepareBrowser');
   // This live validation advances exactly once after chapter one succeeds.
   const advance = setInterval(() => {
     const status = api.getBridgeStatus();

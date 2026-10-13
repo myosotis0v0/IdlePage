@@ -12,7 +12,7 @@ async function until(check: () => boolean) {
   for (let i = 0; i < 100 && !check(); i++) await new Promise(resolve => setTimeout(resolve, 10));
   assert.ok(check(), 'companion reached expected state');
 }
-async function harness(t: { after(fn: () => Promise<void>): void }, online = true) {
+async function harness(t: { after(fn: () => Promise<void>): void }, online = true, staleImport = false) {
   const data: Record<string, any> = {};
   const tabs: Array<{ id: number; url: string; active: boolean }> = [];
   const closed = new Set<number>();
@@ -43,8 +43,9 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
       onAlarm: { addListener: (fn: (...args: any[]) => any) => { events.alarm = fn; } },
     },
   };
-  const context: Record<string, any> = { endpoint: bridge.endpoint(), token, chrome, URL, AbortSignal,
+  const context: Record<string, any> = { endpoint: bridge.endpoint(), token: staleImport ? 'd'.repeat(64) : token, chrome, URL, AbortSignal,
     fetch: async (url: string, options: RequestInit) => {
+      if (url === origin + '/pairing.json') return { ok: true, json: async () => ({ endpoint: bridge.endpoint(), token }) };
       if (!network.online) throw new Error('offline');
       // Chromium privileged GET omits Origin; POST attaches the extension Origin.
       return fetch(url, { ...options, headers: { ...options.headers, ...(options.method === 'POST' ? { Origin: origin } : {}), ...(network.wrongToken ? { Authorization: 'Bearer wrong' } : {}) } });
@@ -69,7 +70,8 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
   const emitChapterDiagnostics = (batch: unknown) => new Promise<any>(resolve => {
     if (events.message({ type: 'idlepage-chapter-diagnostics', batch }, { frameId: 0, url: 'https://www.qidian.com/chapter/100/1/', tab: { id: data.activeTask?.tabId } }, resolve) !== true) resolve({ ignored: true });
   });
-  return { data, tabs, updates, emit, emitShelf, emitCatalog, emitChapter, emitChapterDiagnostics, poll, network, closed, probe };
+  const wake = () => new Promise<any>(resolve => { events.message({ type: 'idlepage-connect' }, { url: origin + '/status.html' }, resolve); });
+  return { data, tabs, updates, emit, emitShelf, emitCatalog, emitChapter, emitChapterDiagnostics, wake, poll, network, closed, probe };
 }
 test('production companion and real HTTP server complete tasks without extraction clicks', async t => {
   const h = await harness(t);
@@ -125,6 +127,13 @@ test('authentication errors are visible and cleared on successful reconnection',
   assert.equal(h.data.connection, 'connected');
   assert.equal(h.data.connectionError, null);
   assert.equal(h.tabs.length, 1);
+});
+
+test('worker reads fresh pairing data despite a stale imported module and reconnects from its own page', async t => {
+  const h = await harness(t, true, true);
+  assert.equal(h.data.connection, 'connected');
+  await h.emit(); assert.equal(h.data.activeTask.kind, 'bookshelf');
+  const count = h.tabs.length; assert.equal((await h.wake()).accepted, true); assert.equal(h.tabs.length, count);
 });
 test('bookshelf task transfers structured books while browser storage keeps only summary', async t => {
   const h = await harness(t);
