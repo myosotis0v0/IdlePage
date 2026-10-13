@@ -41,11 +41,13 @@ test('page contract rejects mismatched IDs, unsafe URLs, duplicate IDs and accou
 });
 test('blocked page cannot submit a book list; summaries never expose book names', () => {
   const probe = new QidianAccessProbe(); probe.startBookshelfExtraction();
-  const task = probe.nextTask()!;
+  let task = probe.nextTask()!;
   const page = extract('<html><body><div id="bookcaseList"><a href="https://www.qidian.com/book/123/">测试书</a></div></body></html>')!;
   assert.equal(probe.acceptBookshelf(task.id, page), 'invalid');
   probe.accept(task.id, { ...visible, captchaFrame: true });
-  assert.equal(probe.acceptBookshelf(task.id, page), 'invalid');
+  assert.equal(probe.acceptBookshelf(task.id, page), 'stale');
+  assert.equal(probe.nextTask(), null);
+  probe.startBookshelfExtraction(); task = probe.nextTask()!;
   probe.accept(task.id, visible);
   assert.equal(probe.acceptBookshelf(task.id, page), 'accepted');
   assert.equal(probe.snapshot().phase, 'bookshelf-page-ready');

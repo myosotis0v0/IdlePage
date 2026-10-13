@@ -56,7 +56,7 @@ async function poll() {
     if (!task) {
       const { managedTabs } = await chrome.storage.local.get('managedTabs');
       if (managedTabs?.previous) await settleTabs(managedTabs.current.id,
-        state.phase === 'chapter-unavailable' && !['needs-login', 'access-blocked'].includes(state.chapterSummary?.reason));
+        ['chapter-unavailable', 'cancelled', 'task-failed'].includes(state.phase) && state.failure?.reason !== 'access-blocked' && !['needs-login', 'access-blocked'].includes(state.chapterSummary?.reason));
       await chrome.storage.local.set({ activeTask: null }); return;
     }
     const safeCatalog = task.kind === 'catalog' && /^\d{1,20}$/.test(task.bookId ?? '') && task.url === `https://www.qidian.com/book/${task.bookId}/#Catalog`;
@@ -65,14 +65,14 @@ async function poll() {
     if ((!safeCatalog && !safeChapter && !['https://www.qidian.com/', 'https://my.qidian.com/bookcase/'].includes(task.url)) || typeof task.id !== 'string') return;
     const { activeTask, managedTabs } = await chrome.storage.local.get(['activeTask', 'managedTabs']);
     if (epoch !== navigationEpoch) return;
-    if (activeTask?.id === task.id && activeTask.protocolVersion === 4) {
+    if (activeTask?.id === task.id && activeTask.protocolVersion === 5) {
       try { await chrome.tabs.get(activeTask.tabId); return; }
       catch { if (state.report?.state === 'AccessBlocked') return; }
     }
     await removeOwned(managedTabs?.previous);
-    const tab = await chrome.tabs.create({ url: task.url, active: false });
+    const tab = await chrome.tabs.create({ url: task.url, active: task.kind === 'login' });
     if (epoch !== navigationEpoch) { await chrome.tabs.remove(tab.id); return; }
-    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 4 },
+    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 5, attentionShown: task.kind === 'login' },
       managedTabs: { current: { id: tab.id, url: task.url, kind: task.kind }, previous: managedTabs?.current ?? null },
       taskTabSummary: { count: managedTabs?.current ? 2 : 1 } });
   } catch (error) {
@@ -91,7 +91,7 @@ async function handleObservation(message, sender) {
     await chrome.storage.local.set({ phase: reply.phase, chapterSummary: reply.chapterSummary ?? null });
     if (reply.phase === 'chapter-preview-ready') await settleTabs(activeTask.tabId);
     if (reply.phase === 'chapter-unavailable') await settleTabs(activeTask.tabId, !['needs-login', 'access-blocked'].includes(message.batch?.reason));
-    if (['chapter-preview-ready', 'chapter-unavailable'].includes(reply.phase)) await poll();
+    if (['chapter-preview-ready', 'chapter-unavailable', 'waiting-login'].includes(reply.phase)) await poll();
     return { accepted: true };
   }
   if (message.type === 'idlepage-catalog') {
@@ -119,10 +119,11 @@ async function handleObservation(message, sender) {
   const state = reply.report?.state;
   if (reply.phase === 'chapter-unavailable') await settleTabs(activeTask.tabId);
   if (state === 'SiteContentVisible' && ['access', 'bookshelf'].includes(activeTask.kind)) await settleTabs(activeTask.tabId);
-  if (state === 'NeedsLogin' && !activeTask.attentionShown) {
+  if (activeTask.kind === 'login' && reply.recovery?.waitingLogin && !activeTask.attentionShown) {
     await chrome.tabs.update(activeTask.tabId, { active: true });
     await chrome.storage.local.set({ activeTask: { ...activeTask, attentionShown: true } });
   }
+  if (activeTask.kind === 'login' && reply.recovery?.resumed) await settleTabs(activeTask.tabId);
   await poll();
   return { accepted: true, bookshelfRequested: activeTask.kind === 'bookshelf-list', catalogRequested: activeTask.kind === 'catalog', chapterRequested: activeTask.kind === 'chapter', bookId: activeTask.bookId };
 }
@@ -143,7 +144,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'idlepage-bridge') void poll(); });
 async function initialize() {
-  await chrome.storage.local.set({ workerVersion: 7 });
+  await chrome.storage.local.set({ workerVersion: 8 });
   await chrome.alarms.create('idlepage-bridge', { periodInMinutes: 0.5 });
   await poll();
 }

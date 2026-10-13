@@ -17,7 +17,7 @@
     "test:extension": "npm run build && node scripts/test-extension.mjs",
     "vscode:prepublish": "npm run build",
     "dev:live": "npm run build && node scripts/live-extension.mjs",
-    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js && node --check browser-extension/bookshelf.js && node --check browser-extension/catalog.js && node --check browser-extension/chapter.js"
+    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js && node --check browser-extension/bookshelf.js && node --check browser-extension/catalog.js && node --check browser-extension/chapter.js && node --check browser-extension/login.js"
   },
   "engines": {
     "node": ">=22",
@@ -131,6 +131,10 @@
       {
         "command": "idlepage.nextChapter",
         "title": "IdlePage: 下一章"
+      },
+      {
+        "command": "idlepage.cancelTask",
+        "title": "IdlePage: 取消当前获取或登录等待"
       }
     ]
   }

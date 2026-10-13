@@ -64,10 +64,12 @@ test('batch contract rejects foreign sites, wrong book IDs, raw fields, and over
   ]) assert.equal(parseCatalogBatch(value), undefined);
 });
 test('ordered batches are idempotent, challenge blocks catalog, and summaries omit names and IDs', () => {
-  const { probe, task, visible } = session();
+  let { probe, task, visible } = session();
   assert.equal(probe.acceptCatalog(task.id, batch()), 'invalid');
   probe.accept(task.id, { ...visible, captchaFrame: true });
-  assert.equal(probe.acceptCatalog(task.id, batch()), 'invalid');
+  assert.equal(probe.acceptCatalog(task.id, batch()), 'stale');
+  assert.equal(probe.nextTask(), null);
+  probe.startCatalogExtraction(); task = probe.nextTask()!;
   probe.accept(task.id, visible);
   assert.equal(probe.acceptCatalog(task.id, batch({ offset: 1 })), 'invalid');
   assert.equal(probe.acceptCatalog(task.id, batch()), 'accepted');
@@ -81,7 +83,7 @@ test('ordered batches are idempotent, challenge blocks catalog, and summaries om
   assert.equal(probe.acceptCatalog(task.id, batch()), 'stale');
 });
 test('empty catalog remains pending and preview reports mismatch and escapes text', () => {
-  const { probe, task, visible } = session(); probe.accept(task.id, visible);
+  let { probe, task, visible } = session(); probe.accept(task.id, visible);
   assert.equal(probe.acceptCatalog(task.id, batch({ total: 0, chapters: [] })), 'accepted');
   assert.equal(probe.snapshot().phase, 'catalog-not-ready');
   assert.equal(probe.nextTask()?.id, task.id);

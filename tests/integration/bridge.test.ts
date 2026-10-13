@@ -9,7 +9,8 @@ const headers = { Origin: origin, Authorization: `Bearer ${token}`, 'Content-Typ
 const visible = { state: 'SiteContentVisible', pageKind: 'other', bodyCharacters: 1500, bookLinks: 3, verification: false, tooFrequent: false, captchaFrame: false };
 
 test('loopback API enforces pairing, host, preflight, payload limits and task identity', async t => {
-  const bridge = new LocalBridgeServer({ port: 0, token, origin, probe: new QidianAccessProbe() });
+  const probe = new QidianAccessProbe();
+  const bridge = new LocalBridgeServer({ port: 0, token, origin, probe });
   await bridge.start(); t.after(() => bridge.close());
   const get = (extra: Record<string, string> = {}) => fetch(bridge.endpoint() + '/v1/tasks/next', { headers: { ...headers, ...extra } });
   const post = (body: string, extra: Record<string, string> = {}) => fetch(bridge.endpoint() + '/v1/tasks/result', { method: 'POST', headers: { ...headers, ...extra }, body });
@@ -31,12 +32,14 @@ test('loopback API enforces pairing, host, preflight, payload limits and task id
   assert.equal((await post(' '.repeat(17000))).status, 413);
   const next = await fetch(bridge.endpoint() + '/v1/tasks/next', { method: 'POST', headers, body: '{}' });
   assert.equal(next.status, 200);
-  const first = (await next.json()).task;
+  let first = (await next.json()).task;
   assert.equal((await fetch(bridge.endpoint() + '/v1/tasks/next', { method: 'POST', headers, body: '[]' })).status, 400);
   assert.equal((await fetch(bridge.endpoint() + '/v1/tasks/next', { method: 'POST', headers, body: '{"taskId":"unexpected"}' })).status, 400);
   assert.equal((await post(JSON.stringify({ taskId: first.id, report: { ...visible, bodyCharacters: -1 } }))).status, 400);
   assert.equal((await post(JSON.stringify({ taskId: first.id, report: { ...visible, tooFrequent: true } }))).status, 200);
-  assert.equal((await (await get()).json()).task.id, first.id);
+  assert.equal((await (await get()).json()).task, null);
+  assert.equal((await post(JSON.stringify({ taskId: first.id, report: visible }))).status, 409);
+  probe.restart(); first = (await (await get()).json()).task;
   const access = await post(JSON.stringify({ taskId: first.id, report: visible }));
   assert.equal(access.status, 200);
   assert.equal((await access.json()).phase, 'waiting-bookshelf');

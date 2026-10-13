@@ -5,6 +5,7 @@ const root = resolve('.');
 const env = { ...process.env };
 if (process.argv.includes('--hidden-smoke')) env.IDLEPAGE_HIDDEN_SMOKE = '1';
 if (process.argv.includes('--lifetime-smoke')) env.IDLEPAGE_LIFETIME_SMOKE = '1';
+if (process.argv.includes('--login-smoke')) env.IDLEPAGE_LOGIN_SMOKE = '1';
 delete env.ELECTRON_RUN_AS_NODE;
 await mkdir(join(root, '.local'), { recursive: true });
 const log = await open(join(root, '.local/vscode-live.log'), 'a');

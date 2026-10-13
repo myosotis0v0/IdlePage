@@ -70,5 +70,17 @@ export async function run(): Promise<void> {
   assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: retryTask.id, report: { ...report, pageKind: 'chapter', bookLinks: 0 } }) })).status, 200);
   assert.equal((await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: retryTask.id, report: { status: 'available', offset: 0, total: body.length, text: body } }) })).status, 200);
   assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'end');
+  await vscode.commands.executeCommand('idlepage.extractChapter');
+  const pending = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
+  await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: pending.id, report: { ...report, state: 'NeedsLogin', pageKind: 'login' } }) });
+  assert.equal(api.getBridgeStatus().phase, 'waiting-login');
+  const loginTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
+  await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: loginTask.id, report: { ...report, pageKind: 'bookshelf' } }) });
+  assert.equal(api.getBridgeStatus().phase, 'waiting-login');
+  await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: loginTask.id, report: { ...report, pageKind: 'bookshelf', loginEvidence: 'bookshelf-content' } }) });
+  assert.equal(api.getBridgeStatus().phase, 'waiting-chapter');
+  assert.equal(await vscode.commands.executeCommand('idlepage.cancelTask'), true);
+  assert.equal(api.getBridgeStatus().phase, 'cancelled');
+  assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: loginTask.id, report }) })).status, 409);
   console.log('IdlePage extension-host smoke test passed (synthetic chapter navigation, failure retry and directory end; no Qidian requests).');
 }

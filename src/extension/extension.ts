@@ -32,6 +32,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let checkingTask: string | undefined;
   let ensureBrowser = () => {};
   let cacheWarning = false;
+  let lastFailure = 0;
   const warnCache = () => { if (!cacheWarning) { cacheWarning = true; output.appendLine('本地缓存读写失败，继续在线读取。'); } };
   const lifetime = new EdgeLifetime(storage);
   const browserWindows = new BrowserWindowController(new EdgeWindowControl());
@@ -39,6 +40,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let visibilityKey = '';
   const visibility = new BrowserVisibility({ windows: browserWindows,
     canHide: () => manageVisibility && vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoHide', true) &&
+      !probe.snapshot().recovery.waitingLogin &&
       !['NeedsLogin', 'AccessBlocked'].includes(probe.snapshot().report?.state ?? ''),
     onFailure: () => { output.appendLine('辅助浏览器自动隐藏未完成'); void vscode.window.showWarningMessage('辅助浏览器未能自动隐藏，可使用显示/隐藏命令排查。读取任务继续执行。'); },
   });
@@ -100,16 +102,16 @@ export async function activate(context: vscode.ExtensionContext) {
       });
     }
     const state = snapshot.report?.state;
-    const nextVisibilityKey = `${probe.currentTaskId() ?? ''}:${state ?? ''}`;
-    if (manageVisibility && vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoHide', true) && nextVisibilityKey !== visibilityKey) {
+    const nextVisibilityKey = `${probe.currentTaskId() ?? ''}:${state ?? ''}:${snapshot.phase}`;
+    if (manageVisibility && (snapshot.recovery.waitingLogin || vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoHide', true)) && nextVisibilityKey !== visibilityKey) {
       visibilityKey = nextVisibilityKey;
-      if (state === 'NeedsLogin') {
+      if (snapshot.recovery.waitingLogin) {
         void browserWindows.revealForAttention().then(result => {
           if (result.status !== 'ok') void vscode.window.showWarningMessage('需要登录，但无法显示辅助浏览器，请使用“显示辅助浏览器”排查。');
         }).catch(() => { void vscode.window.showWarningMessage('需要登录，请使用“显示辅助浏览器”排查。'); });
       } else if (state !== 'AccessBlocked') void visibility.requestHide();
     }
-    const display = state === 'AccessBlocked' ? '访问受阻' : state === 'NeedsLogin' ? '需要登录' :
+    const display = snapshot.recovery.waitingLogin ? '等待手动登录，完成后自动恢复' : snapshot.phase === 'cancelled' ? '已取消获取' : snapshot.phase === 'task-failed' ? '获取已停止' : state === 'AccessBlocked' ? '访问受阻' : state === 'NeedsLogin' ? '需要登录' :
       browserSession?.state === 'failed' ? '浏览器连接失败' :
       snapshot.phase === 'chapter-preview-ready' ? `正文 ${snapshot.chapterSummary?.characters ?? 0} 字符待核对` :
       snapshot.phase === 'chapter-unavailable' ? '正文暂不可获取' :
@@ -121,6 +123,15 @@ export async function activate(context: vscode.ExtensionContext) {
       snapshot.bookshelfSummary ? `书单 ${snapshot.bookshelfSummary.count} 本待核对` : snapshot.phase === 'probe-complete' ? '书架访问完成' :
       snapshot.lastSeenAt ? '浏览器已连接' : '等待浏览器';
     if (snapshot.phase === 'catalog-preview-ready' && !catalogShown) { catalogShown = true; showCatalog(); }
+    if (snapshot.recovery.waitingLogin) chapterShown = false;
+    if (snapshot.failure && snapshot.failure.sequence !== lastFailure) {
+      lastFailure = snapshot.failure.sequence;
+      if (snapshot.phase !== 'chapter-unavailable') {
+        const message = snapshot.failure.reason === 'cancelled' ? '已取消当前任务。' : chapterFailureMessage[snapshot.failure.reason];
+        if (snapshot.failure.reason === 'cancelled') void vscode.window.showInformationMessage(message);
+        else void vscode.window.showWarningMessage(message);
+      }
+    }
     if (['chapter-preview-ready', 'chapter-unavailable'].includes(snapshot.phase) && !chapterShown) {
       chapterShown = true; showChapter(); const result = probe.getChapter();
       if (result?.status === 'unavailable') void vscode.window.showWarningMessage(chapterFailureMessage[result.reason]);
@@ -175,9 +186,8 @@ export async function activate(context: vscode.ExtensionContext) {
         manageVisibility = true; void visibility.requestHide();
         if (!config.get<boolean>('browser.autoStart', true)) return;
         const result = await browserSession!.ensure(id);
-        if (result === 'launch-failed') void vscode.window.showWarningMessage('无法启动专用 Edge，请确认 Microsoft Edge 已安装。当前正文已保留。');
-        if (result === 'connection-timeout') void vscode.window.showWarningMessage('浏览器未能执行任务。请检查专用 Edge 中 IdlePage Browser Companion 是否已安装并启用；首次安装请运行“准备浏览器连接”。当前正文已保留。');
-      }).catch(() => { void vscode.window.showWarningMessage('无法接管专用浏览器的生命周期，请关闭其他 IdlePage 服务窗口后重试。'); });
+        if (['launch-failed', 'connection-timeout'].includes(result) && probe.failConnection(id)) update();
+      }).catch(() => { if (probe.failConnection(id)) { output.appendLine('无法接管专用浏览器的生命周期，请检查其他 IdlePage 服务窗口。'); update(); } });
     };
     update();
     output.appendLine(`本机服务：${bridge.endpoint()}`);
@@ -203,6 +213,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     };
     context.subscriptions.push(
+      vscode.commands.registerCommand('idlepage.cancelTask', () => { const cancelled = probe.cancel(); update(); if (probe.getReadingChapter()) showChapter(); return cancelled; }),
       vscode.workspace.onDidChangeConfiguration(event => {
         if (cache && event.affectsConfiguration('idlepage.cache.maxSizeMB')) void cache.setLimit(vscode.workspace.getConfiguration('idlepage').get<number>('cache.maxSizeMB', 200) * 1024 * 1024).catch(warnCache);
       }),

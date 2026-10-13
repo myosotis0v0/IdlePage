@@ -71,7 +71,7 @@ test('next chapter commits position only after success, retains current text on 
   const empty = session(); empty.probe.acceptChapter(empty.task.id, { status: 'unavailable', reason: 'locked' }); assert.equal(empty.probe.startNextChapter(), 'not-ready');
 });
 test('login, challenge, explicit unavailable and navigation timeout all produce reminders', () => {
-  for (const state of ['NeedsLogin', 'AccessBlocked']) { const { probe, task } = session(); probe.accept(task.id, { ...observation, pageKind: state === 'NeedsLogin' ? 'login' : 'chapter', state, captchaFrame: state === 'AccessBlocked' }); assert.equal(probe.getChapter()?.status, 'unavailable'); }
+  for (const state of ['NeedsLogin', 'AccessBlocked']) { const { probe, task } = session(); probe.accept(task.id, { ...observation, pageKind: state === 'NeedsLogin' ? 'login' : 'chapter', state, captchaFrame: state === 'AccessBlocked' }); if (state === 'NeedsLogin') assert.equal(probe.snapshot().phase, 'waiting-login'); else assert.equal(probe.getChapter()?.status, 'unavailable'); }
   const { probe, task } = session(); assert.equal(probe.acceptChapter(task.id, { status: 'unavailable', reason: 'locked' }), 'accepted'); assert.equal(probe.snapshot().phase, 'chapter-unavailable');
   const other = session(); assert.ok(other.probe.expireChapter(Date.now() + 91000)); assert.deepEqual(other.probe.getChapter(), { status: 'unavailable', reason: 'timeout' });
 });

@@ -96,7 +96,7 @@ test('offline polling reconnects and closed task tab recovers automatically', as
   await until(() => !!h.data.activeTask);
   assert.equal(h.data.connectionError, null);
   const id = h.data.activeTask.id;
-  h.closed.add(h.data.activeTask.tabId); await h.poll();
+  h.closed.add(h.tabs[0].id); await h.poll();
   await until(() => h.tabs.length === 2);
   assert.equal(h.data.activeTask.id, id);
   h.probe.restart(); await h.poll();
@@ -111,10 +111,10 @@ test('challenge does not reload site or repeatedly focus; rejects foreign sender
   await h.emit({ ...visible, captchaFrame: true });
   assert.equal(h.updates.length, 0);
   assert.equal(h.tabs.length, 1);
-  h.closed.add(h.data.activeTask.tabId); await h.poll();
+  h.closed.add(h.tabs.at(-1)!.id); await h.poll();
   await until(() => h.data.connection === 'connected');
   assert.equal(h.data.report.state, 'AccessBlocked');
-  assert.equal(h.probe.nextTask()?.kind, 'access');
+  assert.equal(h.probe.nextTask(), null);
   assert.equal(h.tabs.length, 1);
 });
 test('authentication errors are visible and cleared on successful reconnection', async t => {
@@ -135,8 +135,24 @@ test('only a login requirement activates the task tab and does so once', async t
   const h = await harness(t);
   await h.emit({ ...visible, state: 'NeedsLogin', pageKind: 'login' });
   await h.emit({ ...visible, state: 'NeedsLogin', pageKind: 'login' });
-  assert.equal(h.updates.length, 1);
-  assert.equal(h.tabs.length, 1);
+  assert.equal(h.updates.length, 0);
+  assert.equal(h.tabs.length, 2);
+  assert.equal(h.tabs[1].active, true); assert.equal(h.data.activeTask.kind, 'login');
+});
+
+test('login proof resumes the original task once and cancellation discards late browser messages', async t => {
+  const h = await harness(t); h.probe.startBookshelfExtraction(); await h.poll();
+  const original = h.data.activeTask.id;
+  await h.emit({ ...visible, state: 'NeedsLogin', pageKind: 'login' });
+  const loginId = h.data.activeTask.id; assert.equal(h.data.activeTask.kind, 'login');
+  await h.emit({ ...visible, pageKind: 'bookshelf' }, { url: 'https://my.qidian.com/bookcase/' });
+  assert.equal(h.data.activeTask.id, loginId);
+  await h.emit({ ...visible, pageKind: 'bookshelf', loginEvidence: 'bookshelf-content' } as any, { url: 'https://my.qidian.com/bookcase/' });
+  assert.equal(h.data.activeTask.kind, 'bookshelf-list'); assert.notEqual(h.data.activeTask.id, original);
+  assert.equal(h.tabs.filter(tab => !h.closed.has(tab.id)).length, 2);
+  const tabId = h.data.activeTask.tabId; h.probe.cancel(); await h.poll();
+  assert.equal(h.data.activeTask, null); assert.equal(h.tabs.filter(tab => !h.closed.has(tab.id)).length, 1);
+  assert.equal((await h.emit(visible, { tab: { id: tabId } })).ignored, true);
 });
 
 test('worker reads fresh pairing data despite a stale imported module and reconnects from its own page', async t => {

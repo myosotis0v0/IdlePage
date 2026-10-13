@@ -1,4 +1,4 @@
-export const chapterFailureReasons = ['locked', 'needs-login', 'access-blocked', 'page-error', 'content-not-found', 'unsupported-content', 'timeout'] as const;
+export const chapterFailureReasons = ['locked', 'needs-login', 'access-blocked', 'page-error', 'content-not-found', 'unsupported-content', 'timeout', 'cancelled', 'login-failed', 'connection-failed'] as const;
 export type ChapterFailureReason = typeof chapterFailureReasons[number];
 export type ChapterBatch = { status: 'available'; offset: number; total: number; text: string } | { status: 'unavailable'; reason: ChapterFailureReason };
 export type ChapterResult = { status: 'available'; title: string; text: string } | { status: 'unavailable'; reason: ChapterFailureReason };

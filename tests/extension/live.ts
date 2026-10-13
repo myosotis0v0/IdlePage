@@ -2,11 +2,15 @@ import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
 import { verifyHiddenReading, type LiveApi } from './hiddenReading';
+import { verifyLoginRecovery } from './loginRecoveryLive';
 interface Exports extends LiveApi { getCompanionDirectory(): string }
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<Exports>('myosotis0v0.idle-page')!;
   const api = await extension.activate();
   await writeFile(join(extension.extensionPath, '.local/live-ready.json'), JSON.stringify({ endpoint: api.getBridgeStatus().endpoint, companionDirectory: api.getCompanionDirectory() }, null, 2));
+  if (process.env.IDLEPAGE_LOGIN_SMOKE === '1') {
+    await verifyLoginRecovery(api, extension.extensionPath); await new Promise<void>(() => {}); return;
+  }
   await vscode.commands.executeCommand('idlepage.extractChapter');
   // This live validation advances exactly once after chapter one succeeds.
   const advance = setInterval(() => {

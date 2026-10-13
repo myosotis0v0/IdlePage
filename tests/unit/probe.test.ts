@@ -10,12 +10,14 @@ test('validation canonicalizes challenges and rejects raw data and invalid count
   assert.equal(parseObservation({ ...visible, bookLinks: 0 })?.state, 'Indeterminate');
   for (const value of [{ ...visible, bodyCharacters: -1 }, { ...visible, bookLinks: NaN }, { ...visible, cookie: 'unexpected' }, { ...visible, verification: 'false' }, null]) assert.equal(parseObservation(value), undefined);
 });
-test('challenge retains task; only current task can advance to bookshelf and complete', () => {
+test('challenge stops task; only an explicit restart and current task can advance', () => {
   const probe = new QidianAccessProbe();
-  const first = probe.nextTask()!;
+  let first = probe.nextTask()!;
   assert.equal(probe.accept(first.id, { ...visible, verification: true }), 'accepted');
   assert.equal(probe.snapshot().report?.state, 'AccessBlocked');
-  assert.equal(probe.nextTask()?.id, first.id);
+  assert.equal(probe.nextTask(), null);
+  assert.equal(probe.accept(first.id, visible), 'stale');
+  probe.restart(); first = probe.nextTask()!;
   assert.equal(probe.accept(first.id, visible), 'accepted');
   const shelf = probe.nextTask()!;
   assert.equal(shelf.kind, 'bookshelf');

@@ -19,6 +19,8 @@
   let chapterOffset = 0;
   let chapterDiagnosed = false;
   let sending = false;
+  let loginEvidenceSamples = 0;
+  let previousEvidence;
   async function observe() {
     if (sending) return;
     const text = document.body?.innerText ?? '';
@@ -44,6 +46,10 @@
       pageKind === 'login' ? 'NeedsLogin' : bodyCharacters > 500 && (bookLinks > 0 || ['book', 'chapter'].includes(pageKind)) ? 'SiteContentVisible' : 'Indeterminate';
     // Send counts and status only; no DOM text, names, cookies or URL queries.
     const report = { state, pageKind, bodyCharacters, bookLinks, verification, tooFrequent, captchaFrame };
+    const evidence = !loginFrame && !verification && !tooFrequent && !captchaFrame && pageKind === 'bookshelf' ? globalThis.IdlePageLogin?.evidence(document, location) : undefined;
+    loginEvidenceSamples = evidence && evidence === previousEvidence ? loginEvidenceSamples + 1 : evidence ? 1 : 0;
+    previousEvidence = evidence;
+    if (loginEvidenceSamples >= 3) report.loginEvidence = evidence;
     const encoded = JSON.stringify(report);
     sending = true;
     try {
