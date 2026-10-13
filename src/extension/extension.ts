@@ -10,11 +10,13 @@ import { BrowserSession } from '../application/BrowserSession';
 import { BrowserWindowController } from '../application/BrowserWindowController';
 import { BrowserVisibility } from '../application/BrowserVisibility';
 import { EdgeWindowControl } from '../infrastructure/qidian/EdgeWindowControl';
+import { EdgeLifetime } from '../infrastructure/qidian/EdgeLifetime';
 import { LocalBridgeServer } from '../infrastructure/local-bridge/LocalBridgeServer';
 import { prepareCompanion, readCompanionOrigin, readExistingPairingToken } from '../infrastructure/local-bridge/prepareCompanion';
 import { openEdgeExtensions, openEdgeCompanion } from '../infrastructure/qidian/openEdgeExtensions';
 
 let bridge: LocalBridgeServer | undefined;
+let stopBrowser: (() => Promise<void>) | undefined;
 export async function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel('IdlePage');
   const status = vscode.window.createStatusBarItem('idlepage.connection', vscode.StatusBarAlignment.Left, 0);
@@ -23,6 +25,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(output, status);
   const storage = context.globalStorageUri.fsPath;
   const probe = new QidianAccessProbe();
+  const lifetime = new EdgeLifetime(storage);
   const browserWindows = new BrowserWindowController(new EdgeWindowControl());
   let manageVisibility = false;
   let visibilityKey = '';
@@ -127,26 +130,30 @@ export async function activate(context: vscode.ExtensionContext) {
     // Do not overwrite a running window's paired copy when binding fails.
     const companion = await prepareCompanion(context.extensionPath, storage, bridge.endpoint(), token);
     browserSession = new BrowserSession({ launch: async () => {
-      await openEdgeCompanion(origin);
+      await lifetime.launch(() => openEdgeCompanion(origin));
       void visibility.requestHide();
     }, isCurrent: id => probe.isCurrentTask(id), hasObserved: id => probe.hasObservedTask(id), onChanged: update });
     context.subscriptions.push({ dispose: () => browserSession?.dispose() });
+    stopBrowser = async () => { visibility.dispose(); browserSession?.dispose(); await lifetime.stop(); };
     const ensureBrowser = () => {
       const id = probe.currentTaskId();
       if (!id) return;
-      manageVisibility = true;
-      void visibility.requestHide();
-      if (!vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoStart', true)) return;
-      void browserSession!.ensure(id).then(result => {
+      const config = vscode.workspace.getConfiguration('idlepage');
+      if (!config.get<boolean>('browser.autoStart', true) && !config.get<boolean>('browser.autoHide', true)) return;
+      void lifetime.start().then(async () => {
+        manageVisibility = true; void visibility.requestHide();
+        if (!config.get<boolean>('browser.autoStart', true)) return;
+        const result = await browserSession!.ensure(id);
         if (result === 'launch-failed') void vscode.window.showWarningMessage('无法启动专用 Edge，请确认 Microsoft Edge 已安装。当前正文已保留。');
         if (result === 'connection-timeout') void vscode.window.showWarningMessage('浏览器未能执行任务。请检查专用 Edge 中 IdlePage Browser Companion 是否已安装并启用；首次安装请运行“准备浏览器连接”。当前正文已保留。');
-      });
+      }).catch(() => { void vscode.window.showWarningMessage('无法接管专用浏览器的生命周期，请关闭其他 IdlePage 服务窗口后重试。'); });
     };
     update();
     output.appendLine(`本机服务：${bridge.endpoint()}`);
     output.appendLine(`浏览器辅助扩展目录：${companion.directory}`);
     const controlBrowserWindow = async (action: 'show' | 'hide') => {
       try {
+        await lifetime.start();
         const result = await (action === 'show' ? browserWindows.show() : browserWindows.hide());
         if (result.status === 'ok') {
           void vscode.window.showInformationMessage(action === 'show' ? '已显示辅助浏览器，进入排查状态。执行“隐藏辅助浏览器”可恢复自动管理。' : '已隐藏辅助浏览器；浏览器仍在运行。');
@@ -172,7 +179,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }),
       vscode.commands.registerCommand('idlepage.prepareBrowser', async () => {
         try {
-          await openEdgeExtensions();
+          await lifetime.launch(openEdgeExtensions);
           await vscode.env.clipboard.writeText(companion.directory);
           output.show(true);
           void vscode.window.showInformationMessage('浏览器扩展目录已复制。在 Edge 开发人员模式中加载该目录；安装后自动连接。');
@@ -205,4 +212,8 @@ export async function activate(context: vscode.ExtensionContext) {
     throw new Error(code === 'EADDRINUSE' ? 'IdlePagePortInUse' : 'IdlePageBridgeStartupFailed');
   }
 }
-export async function deactivate(): Promise<void> { await bridge?.close(); bridge = undefined; }
+export async function deactivate(): Promise<void> {
+  const cleanup = stopBrowser; stopBrowser = undefined;
+  try { await bridge?.close(); }
+  finally { bridge = undefined; await cleanup?.(); }
+}

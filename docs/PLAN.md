@@ -381,3 +381,18 @@ API 依据：[EnumWindows](https://learn.microsoft.com/en-us/windows/win32/api/w
 下一步 D03：保存待恢复的书籍/章节任务，建立首次登录和重新登录后恢复目标的完整状态转换；访问受阻、读取错误、取消与过期结果有明确停止和提醒。长时间后台运行按本次用户要求不加入必做验收，若后续出现休眠问题再针对性复现。
 
 背景参考：[Chromium 后台定时器限制](https://developer.chrome.com/blog/timer-throttling-in-chrome-88)。本轮未添加禁用后台限速参数，保持普通浏览器运行条件。
+
+### 2026-10-13：需求 R01 专用浏览器退出回收（单独完成）
+
+用户发现关闭测试 VS Code 后隐藏浏览器仍残留。原实现仅关闭 HTTP 服务，Edge 启动后独立于服务生存，没有退出清理。
+
+- 新增 EdgeLifetime：读取任务、准备连接及窗口命令会接管专用配置的生命周期；启动和退出串行化，停止后禁止迟到的浏览器启动。VS Code deactivate 关闭服务后停止生命周期，正常关闭专用浏览器。
+- 独立隐藏守护进程监测扩展宿主 PID 和启动时间，正常停止信号或宿主退出均触发回收；命名互斥量限制一个专用配置只有一个守护进程。守护完成后退出自身，不长期残留。启动失败允许后续命令重试。
+- 回收先向包含隐藏窗口的专用 Edge 窗口发送关闭消息，等待会话写入。若仍有后台根进程，仅在重新检查专用配置、根 PID 和创建时间后回收该根进程树；不按 msedge.exe 名称批量结束，不影响普通 Edge。
+- Windows PowerShell 在本机 Node detached 启动模式下未执行守护脚本，普通子进程又未通过启动者退出测试。因此改为系统 Start-Process -WindowStyle Hidden 创建独立守护进程；这是本轮实际排错与实测结论，未将未生效方案作为完成项。
+- 真实验证入口 node scripts/live-extension.mjs --lifetime-smoke 自动取得前两章后执行关闭测试窗口；随后专用浏览器 inspect=not-running、窗口数 0，守护的 exit.json 为 closed，守护 PID 已退出。另一独立测试在专用 Edge 隐藏后直接退出启动者进程，同样观察到 closed、专用浏览器和守护均退出。此前测试残留的两个专用窗口也已被回收。
+- 48 项既有单元/集成测试、类型检查和构建通过；真实读取后关闭窗口是额外实机证据。没有保存或同步进程参数、账号信息、书目和正文。
+
+需求 R02 单独后续实现：章节任务标签稳定时最多一个，过渡时最多两个并关闭旧页；书籍、卷、章节和正文映射持久化到本机结构缓存，默认容量 200 MiB 并可配置。容量是缓存上限，不代表自动下载全本；不缓存错误页、试读或不可获取结果，不自动购买或解锁。
+
+参考：[Windows Start-Process 独立进程行为](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/start-process?view=powershell-7.5)。
