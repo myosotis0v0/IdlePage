@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import type { QidianAccessProbe } from '../application/QidianAccessProbe';
 
-export const menuCommands = ['idlepage.openBookshelf', 'idlepage.showBrowser', 'idlepage.hideBrowser', 'idlepage.refreshAll', 'idlepage.cancelTask', 'idlepage.openSettings'];
+export const menuCommands = ['idlepage.openBookshelf', 'idlepage.showBrowser', 'idlepage.hideBrowser', 'idlepage.refreshBookshelf', 'idlepage.refreshAll', 'idlepage.cancelTask', 'idlepage.openSettings'];
 export function hoverMenu(message: string, busy: boolean): vscode.MarkdownString {
   const menu = new vscode.MarkdownString('', true);
   menu.appendMarkdown('**余页**\n\n'); menu.appendText(message);
-  menu.appendMarkdown('\n\n---\n\n[$(library) 进入书架](command:idlepage.openBookshelf)\n\n[$(eye) 显示专用浏览器](command:idlepage.showBrowser)　[$(eye-closed) 隐藏](command:idlepage.hideBrowser)\n\n[$(refresh) 全部刷新](command:idlepage.refreshAll)\n\n');
+  menu.appendMarkdown('\n\n---\n\n[$(library) 进入书架](command:idlepage.openBookshelf)\n\n[$(eye) 显示专用浏览器](command:idlepage.showBrowser)　[$(eye-closed) 隐藏](command:idlepage.hideBrowser)\n\n[$(refresh) 刷新书架](command:idlepage.refreshBookshelf)\n\n[$(refresh) 全部刷新](command:idlepage.refreshAll)\n\n');
   if (busy) menu.appendMarkdown('[$(close) 取消当前任务](command:idlepage.cancelTask)\n\n');
   menu.appendMarkdown('[$(settings-gear) 设置](command:idlepage.openSettings)');
   menu.isTrusted = { enabledCommands: menuCommands }; return menu;

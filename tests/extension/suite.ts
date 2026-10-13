@@ -18,6 +18,11 @@ export async function run(): Promise<void> {
   assert.deepEqual(hover.isTrusted, { enabledCommands: menuCommands });
   assert.ok(!hover.value.includes('[bad](command:evil)'));
   assert.ok(hover.value.includes('command:idlepage.refreshAll'));
+  assert.ok(hover.value.indexOf('command:idlepage.refreshBookshelf') >= 0);
+  assert.ok(hover.value.indexOf('command:idlepage.refreshBookshelf') < hover.value.indexOf('command:idlepage.refreshAll'));
+  await vscode.commands.executeCommand('idlepage.refreshBookshelf');
+  assert.equal(api.getBridgeStatus().phase, 'waiting-bookshelf-list');
+  await vscode.commands.executeCommand('idlepage.cancelTask');
   assert.equal(api.getBrowserWindowMode(), 'managed');
   const companion = api.getCompanionDirectory();
   const pairing = await readFile(join(companion, 'pairing.js'), 'utf8');

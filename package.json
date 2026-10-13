@@ -141,6 +141,10 @@
         "title": "余页: 进入书架"
       },
       {
+        "command": "idlepage.refreshBookshelf",
+        "title": "余页: 刷新书架"
+      },
+      {
         "command": "idlepage.refreshAll",
         "title": "余页: 全部刷新"
       },

@@ -202,8 +202,12 @@ export async function activate(context: vscode.ExtensionContext) {
         if (['launch-failed', 'connection-timeout'].includes(result) && probe.failConnection(id)) update();
       }).catch(() => { if (probe.failConnection(id)) { output.appendLine('无法接管专用浏览器的生命周期，请检查其他 IdlePage 服务窗口。'); update(); } });
     };
+    const refreshBookshelf = () => {
+      if (refreshing || shuttingDown) return false;
+      selectionEpoch++; diagnosticPreviews = false; probe.startBookshelfExtraction(); update(); ensureBrowser(); return true;
+    };
     navigation = new Navigation(probe, {
-      shelf: () => { if (refreshing) return; selectionEpoch++; diagnosticPreviews = false; probe.startBookshelfExtraction(); update(); ensureBrowser(); },
+      shelf: refreshBookshelf,
       book: async (id, refresh) => {
         if (refreshing) return;
         const epoch = ++selectionEpoch; diagnosticPreviews = false; probe.invalidateTask();
@@ -261,6 +265,7 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     context.subscriptions.push(
       vscode.commands.registerCommand('idlepage.openBookshelf', () => { if (!refreshing) navigation!.openShelf(); }),
+      vscode.commands.registerCommand('idlepage.refreshBookshelf', () => { if (refreshBookshelf()) navigation!.openShelf(); }),
       vscode.commands.registerCommand('idlepage.refreshAll', refreshAll),
       vscode.commands.registerCommand('idlepage.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:myosotis0v0.idle-page')),
       vscode.commands.registerCommand('idlepage.cancelTask', () => { selectionEpoch++; const cancelled = probe.cancel(); update(); if (probe.getReadingChapter()) showChapter(); return cancelled || refreshing; }),
