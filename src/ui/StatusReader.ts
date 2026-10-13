@@ -37,7 +37,7 @@ export class StatusReader implements vscode.Disposable {
     // the native item's margins/padding; preserve one logical reading segment.
     const slots = Math.max(1, Math.ceil(percentage / 30));
     const perItemCells = Math.max(4, Math.floor((logicalWidth * percentage / 100 / slots - 24) / 13));
-    this.layout.resize(perItemCells * slots - (slots - 1));
+    this.layout.resize(perItemCells, slots);
     this.changed.fire(this.state());
     const external = vscode.workspace.getConfiguration('idlepage').get<string>('reading.location', 'statusBar') !== 'statusBar';
     if (this.hidden || !this.count && !this.error || external && !this.error) { for (const item of [this.number, ...this.bodies, this.progress, this.back]) item.hide(); return; }

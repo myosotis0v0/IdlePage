@@ -107,7 +107,7 @@ test('native 40vw cap is respected by multi-item segments without clipping or sk
   for (const width of [640, 1000, 2048]) for (const percentage of [10, 30, 60, 80]) {
     const slots = Math.ceil(percentage / 30);
     const capacity = Math.max(4, Math.floor((width * percentage / 100 / slots - 24) / 13));
-    const reader = new ReadingText(); reader.resize(capacity * slots - (slots - 1)); reader.set('fixture', text);
+    const reader = new ReadingText(); reader.resize(capacity, slots); reader.set('fixture', text);
     let all = '';
     do {
       const segment = reader.view().text;
@@ -120,6 +120,33 @@ test('native 40vw cap is respected by multi-item segments without clipping or sk
       all += chunks.join('');
     } while (reader.next());
     assert.equal(all, text);
+  }
+});
+
+test('status item boundaries prefer punctuation, keep closing quotes and fall back for unbroken text', () => {
+  for (const mark of ['，', '。', '；', '！', '？', '、', ',', ';']) {
+    const source = '甲乙丙丁戊己' + mark + '庚辛壬癸子丑寅卯辰巳';
+    const chunks = splitStatusText(source, 10);
+    assert.equal(chunks[0], '甲乙丙丁戊己' + mark);
+    assert.equal(chunks.join(''), source);
+  }
+  assert.equal(splitStatusText('甲乙丙丁戊己。”庚辛壬癸子丑寅卯', 10)[0], '甲乙丙丁戊己。”');
+  assert.equal(splitStatusText('甲乙丙丁戊己庚辛壬癸子丑', 10)[0], '甲乙丙丁戊己庚辛壬癸');
+  assert.equal(splitStatusText('甲乙丙丁戊3.14庚辛壬癸', 10)[0], '甲乙丙丁戊3.14庚辛');
+});
+
+test('punctuation-aware pages retain all text within the configured item count', () => {
+  const source = '第一句话，第二句带有数字3.14；他说：“继续吧。”\n下一行没有中间标点但仍需完整显示😀'.repeat(20);
+  for (const capacity of [4, 9, 16, 30]) for (const slots of [1, 2, 3]) {
+    const reader = new ReadingText(); reader.resize(capacity, slots); reader.set('punctuation', source);
+    let reconstructed = '';
+    do {
+      const chunks = splitStatusText(reader.view().text, capacity);
+      assert.ok(chunks.length <= slots);
+      for (const chunk of chunks) assert.ok([...chunk].reduce((n, c) => n + textCells(c), 0) <= capacity);
+      reconstructed += chunks.join('');
+    } while (reader.next());
+    assert.equal(reconstructed, source.replace(/\n/g, ' '));
   }
 });
 
