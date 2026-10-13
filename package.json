@@ -46,6 +46,14 @@
   "contributes": {
     "configuration": {
       "properties": {
+        "idlepage.reading.location": {
+          "type": "string",
+          "enum": ["statusBar", "sidebar", "panel"],
+          "enumDescriptions": ["状态栏", "侧栏阅读区", "底部面板"],
+          "default": "statusBar",
+          "scope": "application",
+          "description": "正文显示位置，可通过书本菜单中的文本显示位置切换。"
+        },
         "idlepage.bridge.port": {
           "default": 17655,
           "maximum": 65535,
@@ -91,6 +99,10 @@
       "title": "IdlePage"
     },
     "commands": [
+      {
+        "command": "idlepage.selectReadingLocation",
+        "title": "余页: 文本显示位置"
+      },
       {
         "command": "idlepage.showBrowser",
         "title": "IdlePage: 显示辅助浏览器"
@@ -213,6 +225,11 @@
     "viewsContainers": {
       "panel": [
         {
+          "id": "idlepage-reader",
+          "title": "余页",
+          "icon": "media/book.svg"
+        },
+        {
           "id": "idlepage-demo",
           "title": "余页演示",
           "icon": "media/book.svg"
@@ -220,6 +237,14 @@
       ]
     },
     "views": {
+      "idlepage-reader": [
+        {
+          "id": "idlepage.reader",
+          "name": "阅读",
+          "type": "webview",
+          "when": "idlepage.webviewReading"
+        }
+      ],
       "idlepage-demo": [
         {
           "id": "idlepage.readingDemo",

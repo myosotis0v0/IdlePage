@@ -1,4 +1,5 @@
 import { ReadingDemo } from '../ui/ReadingDemo';
+import { ReadingLocation } from '../ui/ReadingLocation';
 import { StatusReader } from '../ui/StatusReader';
 import { ReadingPrefetch } from '../application/ReadingPrefetch';
 import * as vscode from 'vscode';
@@ -37,6 +38,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }));
   const output = vscode.window.createOutputChannel('IdlePage');
   const reader = new StatusReader(); context.subscriptions.push(reader);
+  context.subscriptions.push(new ReadingLocation(reader));
   let prefetch: ReadingPrefetch | undefined;
   let readingRevision = -1;
   let readingFailure: 'prefetch' | 'foreground' = 'prefetch';

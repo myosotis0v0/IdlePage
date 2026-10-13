@@ -96,6 +96,13 @@ export async function run(): Promise<void> {
   assert.ok(api.getReaderStatus().error); const retainedOffset = api.getReaderStatus().offset;
   await vscode.commands.executeCommand('idlepage.returnReading');
   assert.equal(api.getReaderStatus().error, undefined); assert.equal(api.getReaderStatus().offset, retainedOffset);
+  const beforeLocationSwitch = api.getReaderStatus();
+  for (const location of ['panel', 'sidebar', 'statusBar']) {
+    await vscode.workspace.getConfiguration('idlepage').update('reading.location', location, vscode.ConfigurationTarget.Global);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    assert.deepEqual(api.getReaderStatus(), beforeLocationSwitch, 'Changing display location must retain reading state');
+    assert.equal((await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task, null);
+  }
   assert.equal((await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task, null);
   assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'started');
   const retryTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;

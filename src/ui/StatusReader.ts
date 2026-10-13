@@ -3,6 +3,8 @@ import { ReadingText, splitStatusText } from '../application/ReadingText';
 import { WindowWidth } from '../infrastructure/WindowWidth';
 
 export class StatusReader implements vscode.Disposable {
+  private changed = new vscode.EventEmitter<ReturnType<StatusReader['state']>>();
+  readonly onDidChange = this.changed.event;
   private number = vscode.window.createStatusBarItem('idlepage.chapterNumber', vscode.StatusBarAlignment.Left, -1);
   private bodies = [0, 1, 2].map(i => vscode.window.createStatusBarItem('idlepage.readingText' + i, vscode.StatusBarAlignment.Left, -2 - i));
   private progress = vscode.window.createStatusBarItem('idlepage.chapterProgress', vscode.StatusBarAlignment.Left, -5);
@@ -36,7 +38,9 @@ export class StatusReader implements vscode.Disposable {
     const slots = Math.max(1, Math.ceil(percentage / 30));
     const perItemCells = Math.max(4, Math.floor((logicalWidth * percentage / 100 / slots - 24) / 13));
     this.layout.resize(perItemCells * slots - (slots - 1));
-    if (this.hidden || !this.count && !this.error) { for (const item of [this.number, ...this.bodies, this.progress, this.back]) item.hide(); return; }
+    this.changed.fire(this.state());
+    const external = vscode.workspace.getConfiguration('idlepage').get<string>('reading.location', 'statusBar') !== 'statusBar';
+    if (this.hidden || !this.count && !this.error || external && !this.error) { for (const item of [this.number, ...this.bodies, this.progress, this.back]) item.hide(); return; }
     const view = this.layout.view();
     this.number.text = this.count || '0/0'; this.number.show();
     const tooltip = new vscode.MarkdownString();
@@ -59,5 +63,5 @@ export class StatusReader implements vscode.Disposable {
     this.progress.text = `${view.progress}%`; this.progress.show();
     if (this.error) this.back.show(); else this.back.hide();
   }
-  dispose() { this.geometry.dispose(); for (const item of [this.number, ...this.bodies, this.progress, this.back]) item.dispose(); }
+  dispose() { this.changed.dispose(); this.geometry.dispose(); for (const item of [this.number, ...this.bodies, this.progress, this.back]) item.dispose(); }
 }
