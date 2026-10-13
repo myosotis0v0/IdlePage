@@ -25,5 +25,15 @@ export async function run(): Promise<void> {
   assert.equal(api.getBridgeStatus().phase, 'probe-complete');
   await vscode.commands.executeCommand('idlepage.restartProbe');
   assert.equal(api.getBridgeStatus().phase, 'waiting-access');
-  console.log('IdlePage extension-host smoke test passed (synthetic observations; no Qidian requests).');
+  await vscode.commands.executeCommand('idlepage.extractBookshelf');
+  const listTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
+  assert.equal(listTask.kind, 'bookshelf-list');
+  assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: listTask.id, report: { ...report, pageKind: 'bookshelf' } }) })).status, 200);
+  const page = { books: [{ id: '123', title: 'Fixture book', url: 'https://www.qidian.com/book/123/' }], strategy: 'table', anchorCount: 1, truncated: false, pagination: 'not-detected', containerHints: ['table'] };
+  const result = await fetch(endpoint + '/v1/bookshelf/result', { method: 'POST', headers, body: JSON.stringify({ taskId: listTask.id, report: page }) });
+  assert.equal(result.status, 200);
+  assert.ok(!(await result.text()).includes('Fixture book'));
+  assert.equal(api.getBridgeStatus().phase, 'bookshelf-page-ready');
+  await vscode.commands.executeCommand('idlepage.showBookshelf');
+  console.log('IdlePage extension-host smoke test passed (synthetic access and bookshelf; no Qidian requests).');
 }

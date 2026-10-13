@@ -56,8 +56,11 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
     const sender = { frameId: 0, url: 'https://www.qidian.com/', tab: { id: data.activeTask?.tabId }, ...override };
     if (events.message({ type: 'idlepage-observation', report }, sender, resolve) !== true) resolve({ ignored: true });
   });
+  const emitShelf = (page: unknown) => new Promise<any>(resolve => {
+    if (events.message({ type: 'idlepage-bookshelf', page }, { frameId: 0, url: 'https://my.qidian.com/bookcase/', tab: { id: data.activeTask?.tabId } }, resolve) !== true) resolve({ ignored: true });
+  });
   const poll = () => context.__pollForTest();
-  return { data, tabs, updates, emit, poll, network, closed, probe };
+  return { data, tabs, updates, emit, emitShelf, poll, network, closed, probe };
 }
 test('production companion and real HTTP server complete tasks without extraction clicks', async t => {
   const h = await harness(t);
@@ -113,4 +116,18 @@ test('authentication errors are visible and cleared on successful reconnection',
   assert.equal(h.data.connection, 'connected');
   assert.equal(h.data.connectionError, null);
   assert.equal(h.tabs.length, 1);
+});
+test('bookshelf task transfers structured books while browser storage keeps only summary', async t => {
+  const h = await harness(t);
+  h.probe.startBookshelfExtraction(); await h.poll();
+  assert.equal(h.data.activeTask.kind, 'bookshelf-list');
+  const page = { books: [{ id: '123', title: 'Fixture book', url: 'https://www.qidian.com/book/123/' }], strategy: 'table', anchorCount: 1, truncated: false, pagination: 'not-detected', containerHints: ['table'] };
+  assert.equal((await h.emitShelf(page)).accepted, false);
+  const observation = await h.emit({ ...visible, pageKind: 'bookshelf' }, { url: 'https://my.qidian.com/bookcase/' });
+  assert.equal(observation.bookshelfRequested, true);
+  assert.equal((await h.emitShelf(page)).accepted, true);
+  assert.equal(h.data.phase, 'bookshelf-page-ready');
+  assert.equal(h.data.bookshelfSummary.count, 1);
+  assert.ok(!JSON.stringify(h.data).includes('Fixture book'));
+  assert.equal(h.probe.getBookshelf()?.books[0].id, '123');
 });

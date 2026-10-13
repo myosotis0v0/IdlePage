@@ -17,7 +17,7 @@
     "test:extension": "npm run build && node scripts/test-extension.mjs",
     "vscode:prepublish": "npm run build",
     "dev:live": "npm run build && node scripts/live-extension.mjs",
-    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js"
+    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js && node --check browser-extension/bookshelf.js"
   },
   "engines": {
     "node": ">=22",
@@ -29,6 +29,7 @@
     "@types/vscode": "^1.140.0",
     "@vscode/test-electron": "^3.1.0",
     "esbuild": "^0.28.2",
+    "linkedom": "^0.18.13",
     "playwright": "^1.64.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
@@ -68,6 +69,14 @@
       {
         "command": "idlepage.restartProbe",
         "title": "IdlePage: 重新验证接入"
+      },
+      {
+        "command": "idlepage.extractBookshelf",
+        "title": "IdlePage: 测试当前页书单提取"
+      },
+      {
+        "command": "idlepage.showBookshelf",
+        "title": "IdlePage: 查看当前页书单"
       }
     ]
   }

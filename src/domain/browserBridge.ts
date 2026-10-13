@@ -1,4 +1,4 @@
-﻿export type AccessState = 'SiteContentVisible' | 'NeedsLogin' | 'AccessBlocked' | 'Indeterminate';
+export type AccessState = 'SiteContentVisible' | 'NeedsLogin' | 'AccessBlocked' | 'Indeterminate';
 export type PageKind = 'other' | 'login' | 'bookshelf';
 export interface Observation {
   state: AccessState;
@@ -11,7 +11,7 @@ export interface Observation {
 }
 export interface BrowserTask {
   id: string;
-  kind: 'access' | 'bookshelf';
+  kind: 'access' | 'bookshelf' | 'bookshelf-list';
   url: string;
 }
 export interface AccessReport extends Observation {

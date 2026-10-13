@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { bookshelfPreview } from '../ui/bookshelfPreview';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -18,12 +19,25 @@ export async function activate(context: vscode.ExtensionContext) {
   const probe = new QidianAccessProbe();
   let reportWrites = Promise.resolve();
   let lastDisplay = '';
+  let bookshelfShown = false;
+  let preview: vscode.WebviewPanel | undefined;
+  const showBookshelf = () => {
+    const page = probe.getBookshelf();
+    if (!page) { void vscode.window.showInformationMessage('尚未收到当前页书单。'); return; }
+    if (!preview) {
+      preview = vscode.window.createWebviewPanel('idlepage.bookshelf', 'IdlePage：当前页书单', vscode.ViewColumn.Active, { enableScripts: false });
+      preview.onDidDispose(() => { preview = undefined; });
+      context.subscriptions.push(preview);
+    }
+    preview.webview.html = bookshelfPreview(page); preview.reveal();
+  };
   const update = () => {
     const snapshot = probe.snapshot();
     const state = snapshot.report?.state;
-    const display = snapshot.phase === 'probe-complete' ? '书架访问完成' :
+    const display = snapshot.bookshelfSummary ? `书单 ${snapshot.bookshelfSummary.count} 本待核对` : snapshot.phase === 'probe-complete' ? '书架访问完成' :
       state === 'AccessBlocked' ? '访问受阻' : state === 'NeedsLogin' ? '需要登录' :
       snapshot.lastSeenAt ? '浏览器已连接' : '等待浏览器';
+    if (snapshot.bookshelfSummary && !bookshelfShown) { bookshelfShown = true; showBookshelf(); }
     status.text = `IdlePage: ${display}`;
     status.tooltip = '起点接入验证：点击查看连接状态';
     if (display !== lastDisplay) { output.appendLine(display); lastDisplay = display; }
@@ -60,6 +74,8 @@ export async function activate(context: vscode.ExtensionContext) {
         } catch { void vscode.window.showErrorMessage('无法打开 Edge，请手动在普通 Edge 中加载 IdlePage 浏览器辅助扩展。'); output.show(true); }
       }),
       vscode.commands.registerCommand('idlepage.restartProbe', () => { probe.restart(); update(); }),
+      vscode.commands.registerCommand('idlepage.extractBookshelf', () => { bookshelfShown = false; probe.startBookshelfExtraction(); update(); }),
+      vscode.commands.registerCommand('idlepage.showBookshelf', showBookshelf),
     );
     return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory };
   } catch (error) {

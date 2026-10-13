@@ -1,5 +1,9 @@
 (() => {
   let last = '';
+  let bookshelfRequested = false;
+  let shelfSignature = '';
+  let stableSamples = 0;
+  let shelfSent = false;
   let sending = false;
   async function observe() {
     if (sending) return;
@@ -27,11 +31,21 @@
     // Send counts and status only; no DOM text, names, cookies or URL queries.
     const report = { state, pageKind, bodyCharacters, bookLinks, verification, tooFrequent, captchaFrame };
     const encoded = JSON.stringify(report);
-    if (encoded === last) return;
     sending = true;
     try {
-      const response = await chrome.runtime.sendMessage({ type: 'idlepage-observation', report });
-      if (response?.accepted) last = encoded;
+      if (encoded !== last) {
+        const response = await chrome.runtime.sendMessage({ type: 'idlepage-observation', report });
+        if (response?.accepted) { last = encoded; bookshelfRequested = response.bookshelfRequested === true; }
+      }
+      if (!bookshelfRequested || shelfSent || state !== 'SiteContentVisible' || pageKind !== 'bookshelf') return;
+      const page = globalThis.IdlePageBookshelf?.extract(document, location);
+      if (!page || !page.books.length) return;
+      const signature = JSON.stringify(page);
+      stableSamples = signature === shelfSignature ? stableSamples + 1 : 1;
+      shelfSignature = signature;
+      if (stableSamples < 3) return;
+      const response = await chrome.runtime.sendMessage({ type: 'idlepage-bookshelf', page });
+      if (response?.accepted) shelfSent = true;
     } catch { /* Extension reloaded or local bridge offline. */ }
     finally { sending = false; }
   }
