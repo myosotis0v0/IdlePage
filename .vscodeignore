@@ -1,6 +1,5 @@
 ﻿**
 !out/extension.cjs
-!out/extension.cjs.map
 !browser-extension/**
 !media/**
 !package.json

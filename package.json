@@ -2,6 +2,10 @@
   "name": "idle-page",
   "version": "0.0.1",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/myosotis0v0/IdlePage.git"
+  },
   "description": "A discreet VS Code novel reader with status bar reading, online book sources, and account authentication.",
   "type": "module",
   "scripts": {
@@ -26,7 +30,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^26.6.5",
-    "@types/vscode": "^1.140.0",
+    "@types/vscode": "1.95.0",
     "@vscode/test-electron": "^3.1.0",
     "esbuild": "^0.28.2",
     "linkedom": "^0.18.13",
@@ -48,8 +52,16 @@
       "properties": {
         "idlepage.reading.location": {
           "type": "string",
-          "enum": ["statusBar", "sidebar", "panel"],
-          "enumDescriptions": ["状态栏", "侧栏阅读区", "底部面板"],
+          "enum": [
+            "statusBar",
+            "sidebar",
+            "panel"
+          ],
+          "enumDescriptions": [
+            "状态栏",
+            "侧栏阅读区",
+            "底部面板"
+          ],
           "default": "statusBar",
           "scope": "application",
           "description": "正文显示位置，可通过书本菜单中的文本显示位置切换。"

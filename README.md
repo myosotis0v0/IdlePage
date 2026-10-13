@@ -28,6 +28,8 @@ A discreet VS Code novel reader with status bar reading, online book sources, an
 
 ## 从源码运行
 
+也可以直接安装 Release 中的 `.vsix`：VS Code 扩展页 → `…` → **从 VSIX 安装**，选中下载的文件，安装后按提示重载。此方式不需要 Node.js。随后按下文“接入起点中文网”完成浏览器扩展的首次配对安装。
+
 ```powershell
 npm ci
 npm run build
