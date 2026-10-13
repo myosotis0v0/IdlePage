@@ -2,6 +2,16 @@
 
 更新日期：2026-10-13（Asia/Shanghai）。此文件是唯一共享的方案与进度记录，随 Git 提交推送到 GitHub；本机私有实验数据不参与同步。
 
+## 文档分工与开发入口
+
+- `README.md` 仅介绍功能、运行要求、安装接入、使用命令和连接排查，不记录阶段结论、测试数量、实验经过或待办。
+- `docs/PLAN.md` 统一记录设计决策、开发进度、验证证据、限制和后续工作；进入正式开发后继续遵守此分工。
+- `AGENTS.md` 固化代码和文档边界，供后续开发遵循。
+
+正式代码校验使用 `npm test` 和 `npm run test:extension`，构建使用 `npm run build`。交互验证入口 `npm run dev:live` 会打开隔离开发窗口，自动读取当前页书单、第一本书目录及第一章，再执行一次下一章；它属于开发验证流程，不作为常规阅读入口。
+
+原型实验命令保留在 labs：`npm run check:labs`、`npm run probe:qidian`、`npm run login:qidian`、`npm run manual:qidian`、`npm run companion:qidian` 和 `npm run test:labs`。原型结果与正式本机服务分开，不作为正式功能的验收替代。
+
 ## 目标与当前结论
 
 制作自用 VS Code 状态栏小说阅读器，首要书源是起点中文网，仅账号登录及重新登录允许手动操作；登录后自动读取个人书架、目录及账号有权阅读的章节，并保存本地阅读进度。先验证接入，再实现正式阅读体验。
