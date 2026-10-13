@@ -2,7 +2,7 @@
 
 A discreet VS Code novel reader with status bar reading, online book sources, and account authentication.
 
-自用 VS Code 状态栏小说阅读器。目标是仅登录/重新登录需要手动操作，登录后自动获取书架、目录和可读章节并保存本地进度。目前已实现桌面 VS Code 插件内的本机连接服务及配对浏览器辅助扩展；当前页真实书单提取与核对已通过；自动分页、正文和阅读体验尚未实现。
+自用 VS Code 状态栏小说阅读器。目标是仅登录/重新登录需要手动操作，登录后自动获取书架、目录和可读章节并保存本地进度。目前已实现桌面 VS Code 插件内的本机连接服务及配对浏览器辅助扩展；当前页真实书单提取与核对已通过，第一本书目录已接通，阅读进度快捷链接的过滤修复待真实复测；自动分页、正文和阅读体验尚未实现。
 
 ## 目录
 
@@ -25,7 +25,7 @@ npm run test:extension
 npm run dev:live
 ```
 
-`dev:live` 打开持续运行的 VS Code 开发窗口，自动激活 IdlePage 并打开普通 Edge 的扩展管理页。配对目录已复制到剪贴板，在 Edge 开发人员模式中加载此目录。停用旧的 **IdlePage Qidian Access Probe** 实验扩展，避免两个测试同时运行。一次性安装后，**IdlePage Browser Companion** 自动连接并执行 VS Code 下发的任务，无需点击提取。当前 dev:live 自动开启当前页书单测试，并在 VS Code 显示核对页。
+`dev:live` 打开持续运行的 VS Code 开发窗口，自动激活 IdlePage 并打开普通 Edge 的扩展管理页。配对目录已复制到剪贴板，在 Edge 开发人员模式中加载此目录。停用旧的 **IdlePage Qidian Access Probe** 实验扩展，避免两个测试同时运行。一次性安装后，**IdlePage Browser Companion** 自动连接并执行 VS Code 下发的任务，无需点击提取。当前 dev:live 自动开启第一本书目录测试，依次获取当前页书单和第一本书目录，并在 VS Code 显示目录核对页。
 
 也可以在当前项目按 F5，选择 Run IdlePage；然后在开发窗口运行命令 `IdlePage: 准备浏览器连接`，加载该窗口生成的配对目录。不要直接加载源码 `browser-extension/`，其中不包含运行所需的本机配对文件。
 
@@ -38,6 +38,8 @@ npm run dev:live
 - `IdlePage: 重新验证接入`：创建新任务，浏览器自动重新执行首页→书架验证。
 - `IdlePage: 测试当前页书单提取`：自动打开书架、等待书目稳定并显示当前页核对结果。
 - `IdlePage: 查看当前页书单`：重新显示本次核对页。
+- `IdlePage: 测试第一本书目录`：自动选择当前页书单的第一本书并提取目录。
+- `IdlePage: 查看本次目录`：重新显示目录核对页。
 
 更新浏览器辅助扩展后，在 Edge 扩展管理页对 IdlePage Browser Companion 重新加载一次。若验证页仍显示 disconnected，可查看 connectionError：BridgeStatus401 表示配对凭据不匹配，BridgeStatus403 表示来源检查失败，BridgeTimeout/BridgeNetworkError 表示服务超时或网络请求失败；不要复制或发送配对密钥。
 

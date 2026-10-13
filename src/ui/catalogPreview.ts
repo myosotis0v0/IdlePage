@@ -1,0 +1,7 @@
+import type { CatalogResult } from '../domain/catalog';
+const escape = (value: string) => value.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+export function catalogPreview(catalog: CatalogResult, title: string): string {
+  const count = catalog.chapters.length;
+  const matched = catalog.declaredCount === null ? '网页总章数未识别，完整性待核对。' : catalog.declaredCount === count ? '提取数量与网页标注一致，仍需核对卷名、顺序及首尾章节。' : `网页标注 ${catalog.declaredCount} 章，数量不一致，尚待排查。`;
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>body{font-family:var(--vscode-font-family);color:var(--vscode-foreground);padding:20px}table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:8px;border-bottom:1px solid var(--vscode-panel-border)}code{overflow-wrap:anywhere}p{line-height:1.7}</style></head><body><h2>IdlePage：目录核对 — ${escape(title)}</h2><p>已提取 ${count} 章${catalog.truncated ? '（达到本轮上限，已截断）' : ''}。${matched}</p><p>提取方式 ${catalog.strategy}。付费标记取自网页，不能证明账号已订阅；本次不读取正文。</p><table><thead><tr><th>顺序</th><th>卷名</th><th>章节名</th><th>标记</th><th>链接</th></tr></thead><tbody>${catalog.chapters.map((chapter, index) => `<tr><td>${index + 1}</td><td>${escape(chapter.volume)}</td><td>${escape(chapter.title)}</td><td>${{ free: '免费', paid: '付费', unknown: '未知' }[chapter.payment]}</td><td><code>${escape(chapter.url)}</code></td></tr>`).join('')}</tbody></table></body></html>`;
+}

@@ -59,8 +59,11 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
   const emitShelf = (page: unknown) => new Promise<any>(resolve => {
     if (events.message({ type: 'idlepage-bookshelf', page }, { frameId: 0, url: 'https://my.qidian.com/bookcase/', tab: { id: data.activeTask?.tabId } }, resolve) !== true) resolve({ ignored: true });
   });
+  const emitCatalog = (batch: unknown, url = 'https://www.qidian.com/book/100/') => new Promise<any>(resolve => {
+    if (events.message({ type: 'idlepage-catalog', batch }, { frameId: 0, url, tab: { id: data.activeTask?.tabId } }, resolve) !== true) resolve({ ignored: true });
+  });
   const poll = () => context.__pollForTest();
-  return { data, tabs, updates, emit, emitShelf, poll, network, closed, probe };
+  return { data, tabs, updates, emit, emitShelf, emitCatalog, poll, network, closed, probe };
 }
 test('production companion and real HTTP server complete tasks without extraction clicks', async t => {
   const h = await harness(t);
@@ -130,4 +133,22 @@ test('bookshelf task transfers structured books while browser storage keeps only
   assert.equal(h.data.bookshelfSummary.count, 1);
   assert.ok(!JSON.stringify(h.data).includes('Fixture book'));
   assert.equal(h.probe.getBookshelf()?.books[0].id, '123');
+});
+test('catalog pipeline selects first shelf book, receives ordered batches, and rejects another book page', async t => {
+  const h = await harness(t); h.probe.startCatalogExtraction(); await h.poll();
+  await h.emit({ ...visible, pageKind: 'bookshelf' }, { url: 'https://my.qidian.com/bookcase/' });
+  await h.emitShelf({ books: [{ id: '100', title: 'Fixture book', url: 'https://www.qidian.com/book/100/' }], strategy: 'table', anchorCount: 1, truncated: false, pagination: 'not-detected', containerHints: ['table'] });
+  assert.equal(h.data.activeTask.kind, 'catalog');
+  assert.equal(h.tabs.at(-1)?.url, 'https://www.qidian.com/book/100/#Catalog');
+  const ready = await h.emit({ ...visible, pageKind: 'book', bookLinks: 0 }, { url: 'https://www.qidian.com/book/100/' });
+  assert.equal(ready.catalogRequested, true);
+  const chapter = (id: string) => ({ id, title: 'Fixture chapter', url: `https://www.qidian.com/chapter/100/${id}/`, volume: 'Fixture volume', payment: 'unknown' });
+  const batch = { bookId: '100', offset: 0, total: 2, declaredCount: null, truncated: false, strategy: 'catalog-container', chapters: [chapter('1')] };
+  assert.equal((await h.emitCatalog(batch, 'https://www.qidian.com/book/200/')).ignored, true);
+  assert.equal((await h.emitCatalog(batch)).accepted, true);
+  assert.equal(h.data.catalogSummary.count, 1);
+  assert.equal((await h.emitCatalog({ ...batch, offset: 1, chapters: [chapter('2')] })).accepted, true);
+  assert.equal(h.data.phase, 'catalog-preview-ready');
+  assert.equal(h.data.catalogSummary.count, 2);
+  assert.ok(!JSON.stringify(h.data).includes('Fixture chapter'));
 });

@@ -79,7 +79,7 @@ export class LocalBridgeServer {
     if (req.method === 'GET' && req.url === '/v1/status') {
       this.reply(res, 200, this.options.probe.snapshot()); return;
     }
-    if (req.method !== 'POST' || !['/v1/tasks/result', '/v1/tasks/next', '/v1/bookshelf/result'].includes(req.url ?? '')) {
+    if (req.method !== 'POST' || !['/v1/tasks/result', '/v1/tasks/next', '/v1/bookshelf/result', '/v1/catalog/result'].includes(req.url ?? '')) {
       this.reply(res, 404, { error: 'UnknownRoute' }); return;
     }
     if ((req.headers['content-type'] ?? '').split(';')[0].trim() !== 'application/json') {
@@ -103,7 +103,7 @@ export class LocalBridgeServer {
       const task = this.options.probe.nextTask(); this.options.onChanged?.();
       this.reply(res, 200, { task, ...this.options.probe.snapshot() }); return;
     }
-    const result = req.url === '/v1/bookshelf/result' ? this.options.probe.acceptBookshelf(input.taskId, input.report) : this.options.probe.accept(input.taskId, input.report);
+    const result = req.url === '/v1/catalog/result' ? this.options.probe.acceptCatalog(input.taskId, input.report) : req.url === '/v1/bookshelf/result' ? this.options.probe.acceptBookshelf(input.taskId, input.report) : this.options.probe.accept(input.taskId, input.report);
     if (result !== 'accepted') {
       this.reply(res, result === 'stale' ? 409 : 400, { error: result === 'stale' ? 'StaleTask' : 'InvalidObservation' }); return;
     }

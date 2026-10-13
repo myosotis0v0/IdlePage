@@ -17,7 +17,7 @@
     "test:extension": "npm run build && node scripts/test-extension.mjs",
     "vscode:prepublish": "npm run build",
     "dev:live": "npm run build && node scripts/live-extension.mjs",
-    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js && node --check browser-extension/bookshelf.js"
+    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js && node --check browser-extension/bookshelf.js && node --check browser-extension/catalog.js"
   },
   "engines": {
     "node": ">=22",
@@ -77,6 +77,14 @@
       {
         "command": "idlepage.showBookshelf",
         "title": "IdlePage: 查看当前页书单"
+      },
+      {
+        "command": "idlepage.extractCatalog",
+        "title": "IdlePage: 测试第一本书目录"
+      },
+      {
+        "command": "idlepage.showCatalog",
+        "title": "IdlePage: 查看本次目录"
       }
     ]
   }

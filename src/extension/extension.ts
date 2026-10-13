@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { catalogPreview } from '../ui/catalogPreview';
 import { bookshelfPreview } from '../ui/bookshelfPreview';
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
@@ -20,6 +21,8 @@ export async function activate(context: vscode.ExtensionContext) {
   let reportWrites = Promise.resolve();
   let lastDisplay = '';
   let bookshelfShown = false;
+  let catalogShown = false;
+  let catalogPanel: vscode.WebviewPanel | undefined;
   let preview: vscode.WebviewPanel | undefined;
   const showBookshelf = () => {
     const page = probe.getBookshelf();
@@ -31,13 +34,28 @@ export async function activate(context: vscode.ExtensionContext) {
     }
     preview.webview.html = bookshelfPreview(page); preview.reveal();
   };
+  const showCatalog = () => {
+    const catalog = probe.getCatalog();
+    if (!catalog || probe.snapshot().phase !== 'catalog-preview-ready') { void vscode.window.showInformationMessage('尚未收到完整的本次目录结果。'); return; }
+    if (!catalogPanel) {
+      catalogPanel = vscode.window.createWebviewPanel('idlepage.catalog', 'IdlePage：目录核对', vscode.ViewColumn.Active, { enableScripts: false });
+      catalogPanel.onDidDispose(() => { catalogPanel = undefined; }); context.subscriptions.push(catalogPanel);
+    }
+    const title = probe.getBookshelf()?.books.find(book => book.id === catalog.bookId)?.title ?? catalog.bookId;
+    catalogPanel.webview.html = catalogPreview(catalog, title); catalogPanel.reveal();
+  };
   const update = () => {
     const snapshot = probe.snapshot();
     const state = snapshot.report?.state;
-    const display = snapshot.bookshelfSummary ? `书单 ${snapshot.bookshelfSummary.count} 本待核对` : snapshot.phase === 'probe-complete' ? '书架访问完成' :
-      state === 'AccessBlocked' ? '访问受阻' : state === 'NeedsLogin' ? '需要登录' :
+    const display = state === 'AccessBlocked' ? '访问受阻' : state === 'NeedsLogin' ? '需要登录' :
+      snapshot.phase === 'catalog-preview-ready' ? `目录 ${snapshot.catalogSummary?.count ?? 0} 章待核对` :
+      snapshot.phase === 'catalog-not-ready' ? '尚未找到目录章节' :
+      snapshot.phase === 'waiting-catalog' ? '正在打开目录' :
+      snapshot.phase === 'receiving-catalog' ? `目录 ${snapshot.catalogSummary?.count}/${snapshot.catalogSummary?.total}` :
+      snapshot.bookshelfSummary ? `书单 ${snapshot.bookshelfSummary.count} 本待核对` : snapshot.phase === 'probe-complete' ? '书架访问完成' :
       snapshot.lastSeenAt ? '浏览器已连接' : '等待浏览器';
-    if (snapshot.bookshelfSummary && !bookshelfShown) { bookshelfShown = true; showBookshelf(); }
+    if (snapshot.phase === 'catalog-preview-ready' && !catalogShown) { catalogShown = true; showCatalog(); }
+    if (snapshot.bookshelfSummary && !bookshelfShown && !snapshot.phase.includes('catalog')) { bookshelfShown = true; showBookshelf(); }
     status.text = `IdlePage: ${display}`;
     status.tooltip = '起点接入验证：点击查看连接状态';
     if (display !== lastDisplay) { output.appendLine(display); lastDisplay = display; }
@@ -76,6 +94,8 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('idlepage.restartProbe', () => { probe.restart(); update(); }),
       vscode.commands.registerCommand('idlepage.extractBookshelf', () => { bookshelfShown = false; probe.startBookshelfExtraction(); update(); }),
       vscode.commands.registerCommand('idlepage.showBookshelf', showBookshelf),
+      vscode.commands.registerCommand('idlepage.extractCatalog', () => { catalogShown = false; probe.startCatalogExtraction(); update(); }),
+      vscode.commands.registerCommand('idlepage.showCatalog', showCatalog),
     );
     return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory };
   } catch (error) {

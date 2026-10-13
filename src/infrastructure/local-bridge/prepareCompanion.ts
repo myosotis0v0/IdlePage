@@ -13,7 +13,7 @@ export async function prepareCompanion(extensionPath: string, storagePath: strin
   const origin = await readCompanionOrigin(extensionPath);
   const directory = join(storagePath, 'companion');
   await mkdir(directory, { recursive: true });
-  for (const file of ['manifest.json', 'worker.js', 'bookshelf.js', 'content.js', 'status.html', 'status.js']) await copyFile(join(source, file), join(directory, file));
+  for (const file of ['manifest.json', 'worker.js', 'bookshelf.js', 'catalog.js', 'content.js', 'status.html', 'status.js']) await copyFile(join(source, file), join(directory, file));
   // Local paired copy only. This file is never part of the source or VSIX.
   await writeFile(join(directory, 'pairing.js'), `export const endpoint = ${JSON.stringify(endpoint)};\nexport const token = ${JSON.stringify(token)};\n`, { encoding: 'utf8', mode: 0o600 });
   return { directory, origin };

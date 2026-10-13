@@ -35,5 +35,16 @@ export async function run(): Promise<void> {
   assert.ok(!(await result.text()).includes('Fixture book'));
   assert.equal(api.getBridgeStatus().phase, 'bookshelf-page-ready');
   await vscode.commands.executeCommand('idlepage.showBookshelf');
-  console.log('IdlePage extension-host smoke test passed (synthetic access and bookshelf; no Qidian requests).');
+  await vscode.commands.executeCommand('idlepage.extractCatalog');
+  const catalogTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
+  assert.equal(catalogTask.kind, 'catalog');
+  assert.equal(catalogTask.bookId, '123');
+  assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: catalogTask.id, report: { ...report, pageKind: 'book', bookLinks: 0 } }) })).status, 200);
+  const catalog = { bookId: '123', offset: 0, total: 1, declaredCount: 1, truncated: false, strategy: 'catalog-container', chapters: [{ id: '11', title: 'Fixture chapter', url: 'https://www.qidian.com/chapter/123/11/', volume: 'Fixture volume', payment: 'free' }] };
+  const catalogReply = await fetch(endpoint + '/v1/catalog/result', { method: 'POST', headers, body: JSON.stringify({ taskId: catalogTask.id, report: catalog }) });
+  assert.equal(catalogReply.status, 200);
+  assert.ok(!(await catalogReply.text()).includes('Fixture chapter'));
+  assert.equal(api.getBridgeStatus().phase, 'catalog-preview-ready');
+  await vscode.commands.executeCommand('idlepage.showCatalog');
+  console.log('IdlePage extension-host smoke test passed (synthetic access, bookshelf and catalog; no Qidian requests).');
 }
