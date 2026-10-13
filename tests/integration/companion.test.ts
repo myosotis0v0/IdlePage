@@ -76,6 +76,7 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
 test('production companion and real HTTP server complete tasks without extraction clicks', async t => {
   const h = await harness(t);
   assert.equal(h.tabs[0].url, 'https://www.qidian.com/');
+  assert.equal(h.tabs[0].active, false);
   const previous = h.data.activeTask.tabId;
   await Promise.all([h.emit(), h.emit()]);
   assert.equal(h.tabs.length, 2);
@@ -107,7 +108,7 @@ test('challenge does not reload site or repeatedly focus; rejects foreign sender
   assert.equal((await h.emit({ ...visible, bookLinks: -1 })).accepted, false);
   await h.emit({ ...visible, captchaFrame: true });
   await h.emit({ ...visible, captchaFrame: true });
-  assert.equal(h.updates.length, 1);
+  assert.equal(h.updates.length, 0);
   assert.equal(h.tabs.length, 1);
   h.closed.add(h.data.activeTask.tabId); await h.poll();
   await until(() => h.data.connection === 'connected');
@@ -126,6 +127,14 @@ test('authentication errors are visible and cleared on successful reconnection',
   await h.poll();
   assert.equal(h.data.connection, 'connected');
   assert.equal(h.data.connectionError, null);
+  assert.equal(h.tabs.length, 1);
+});
+
+test('only a login requirement activates the task tab and does so once', async t => {
+  const h = await harness(t);
+  await h.emit({ ...visible, state: 'NeedsLogin', pageKind: 'login' });
+  await h.emit({ ...visible, state: 'NeedsLogin', pageKind: 'login' });
+  assert.equal(h.updates.length, 1);
   assert.equal(h.tabs.length, 1);
 });
 

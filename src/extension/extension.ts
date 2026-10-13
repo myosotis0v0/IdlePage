@@ -8,6 +8,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { QidianAccessProbe } from '../application/QidianAccessProbe';
 import { BrowserSession } from '../application/BrowserSession';
 import { BrowserWindowController } from '../application/BrowserWindowController';
+import { BrowserVisibility } from '../application/BrowserVisibility';
 import { EdgeWindowControl } from '../infrastructure/qidian/EdgeWindowControl';
 import { LocalBridgeServer } from '../infrastructure/local-bridge/LocalBridgeServer';
 import { prepareCompanion, readCompanionOrigin, readExistingPairingToken } from '../infrastructure/local-bridge/prepareCompanion';
@@ -23,6 +24,14 @@ export async function activate(context: vscode.ExtensionContext) {
   const storage = context.globalStorageUri.fsPath;
   const probe = new QidianAccessProbe();
   const browserWindows = new BrowserWindowController(new EdgeWindowControl());
+  let manageVisibility = false;
+  let visibilityKey = '';
+  const visibility = new BrowserVisibility({ windows: browserWindows,
+    canHide: () => manageVisibility && vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoHide', true) &&
+      !['NeedsLogin', 'AccessBlocked'].includes(probe.snapshot().report?.state ?? ''),
+    onFailure: () => { output.appendLine('辅助浏览器自动隐藏未完成'); void vscode.window.showWarningMessage('辅助浏览器未能自动隐藏，可使用显示/隐藏命令排查。读取任务继续执行。'); },
+  });
+  context.subscriptions.push({ dispose: () => visibility.dispose() });
   let browserSession: BrowserSession | undefined;
   let reportWrites = Promise.resolve();
   let lastDisplay = '';
@@ -63,8 +72,18 @@ export async function activate(context: vscode.ExtensionContext) {
     chapterPanel.webview.html = chapterPreview(reading ?? result!, reading ? probe.snapshot().chapterNavigation : undefined, notice); chapterPanel.reveal();
   };
   const update = () => {
-    const snapshot = { ...probe.snapshot(), browserConnection: browserSession?.state };
+    const snapshot = { ...probe.snapshot(), browserConnection: browserSession?.state,
+      browserWindow: { mode: browserWindows.mode, lastAutomaticControl: visibility.lastResult } };
     const state = snapshot.report?.state;
+    const nextVisibilityKey = `${probe.currentTaskId() ?? ''}:${state ?? ''}`;
+    if (manageVisibility && vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoHide', true) && nextVisibilityKey !== visibilityKey) {
+      visibilityKey = nextVisibilityKey;
+      if (state === 'NeedsLogin') {
+        void browserWindows.revealForAttention().then(result => {
+          if (result.status !== 'ok') void vscode.window.showWarningMessage('需要登录，但无法显示辅助浏览器，请使用“显示辅助浏览器”排查。');
+        }).catch(() => { void vscode.window.showWarningMessage('需要登录，请使用“显示辅助浏览器”排查。'); });
+      } else if (state !== 'AccessBlocked') void visibility.requestHide();
+    }
     const display = state === 'AccessBlocked' ? '访问受阻' : state === 'NeedsLogin' ? '需要登录' :
       browserSession?.state === 'failed' ? '浏览器连接失败' :
       snapshot.phase === 'chapter-preview-ready' ? `正文 ${snapshot.chapterSummary?.characters ?? 0} 字符待核对` :
@@ -107,11 +126,17 @@ export async function activate(context: vscode.ExtensionContext) {
     await bridge.start();
     // Do not overwrite a running window's paired copy when binding fails.
     const companion = await prepareCompanion(context.extensionPath, storage, bridge.endpoint(), token);
-    browserSession = new BrowserSession({ launch: () => openEdgeCompanion(origin), isCurrent: id => probe.isCurrentTask(id), hasObserved: id => probe.hasObservedTask(id), onChanged: update });
+    browserSession = new BrowserSession({ launch: async () => {
+      await openEdgeCompanion(origin);
+      void visibility.requestHide();
+    }, isCurrent: id => probe.isCurrentTask(id), hasObserved: id => probe.hasObservedTask(id), onChanged: update });
     context.subscriptions.push({ dispose: () => browserSession?.dispose() });
     const ensureBrowser = () => {
       const id = probe.currentTaskId();
-      if (!id || !vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoStart', true)) return;
+      if (!id) return;
+      manageVisibility = true;
+      void visibility.requestHide();
+      if (!vscode.workspace.getConfiguration('idlepage').get<boolean>('browser.autoStart', true)) return;
       void browserSession!.ensure(id).then(result => {
         if (result === 'launch-failed') void vscode.window.showWarningMessage('无法启动专用 Edge，请确认 Microsoft Edge 已安装。当前正文已保留。');
         if (result === 'connection-timeout') void vscode.window.showWarningMessage('浏览器未能执行任务。请检查专用 Edge 中 IdlePage Browser Companion 是否已安装并启用；首次安装请运行“准备浏览器连接”。当前正文已保留。');

@@ -41,7 +41,7 @@ async function poll() {
       try { await chrome.tabs.get(activeTask.tabId); return; }
       catch { if (state.report?.state === 'AccessBlocked') return; }
     }
-    const tab = await chrome.tabs.create({ url: task.url, active: task.kind === 'access' });
+    const tab = await chrome.tabs.create({ url: task.url, active: false });
     await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 4 } });
   } catch (error) {
     const code = /^BridgeStatus\d{3}$/.test(error?.message ?? '') ? error.message :
@@ -81,7 +81,7 @@ async function handleObservation(message, sender) {
   });
   await chrome.storage.local.set({ connection: 'connected', phase: reply.phase, report: reply.report });
   const state = reply.report?.state;
-  if ((state === 'NeedsLogin' || state === 'AccessBlocked') && !activeTask.attentionShown) {
+  if (state === 'NeedsLogin' && !activeTask.attentionShown) {
     await chrome.tabs.update(activeTask.tabId, { active: true });
     await chrome.storage.local.set({ activeTask: { ...activeTask, attentionShown: true } });
   }
@@ -105,7 +105,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'idlepage-bridge') void poll(); });
 async function initialize() {
-  await chrome.storage.local.set({ workerVersion: 5 });
+  await chrome.storage.local.set({ workerVersion: 6 });
   await chrome.alarms.create('idlepage-bridge', { periodInMinutes: 0.5 });
   await poll();
 }

@@ -33,6 +33,11 @@ export class BrowserWindowController {
     return this.schedule(() => this.mode === 'diagnostic' ? Promise.resolve(undefined) : this.port.control('hide'));
   }
 
+  // Login visibility is temporary, rather than an explicit diagnostic override.
+  revealForAttention(): Promise<BrowserWindowResult> {
+    return this.schedule(() => this.port.control('show'));
+  }
+
   private schedule<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.queue.then(operation);
     this.queue = result.catch(() => {});

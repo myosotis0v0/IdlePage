@@ -1,7 +1,8 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
-interface Exports { getBridgeStatus(): { endpoint: string; phase: string; chapterNavigation: { current: number } }; getCompanionDirectory(): string }
+import { verifyHiddenReading, type LiveApi } from './hiddenReading';
+interface Exports extends LiveApi { getCompanionDirectory(): string }
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<Exports>('myosotis0v0.idle-page')!;
   const api = await extension.activate();
@@ -13,6 +14,7 @@ export async function run(): Promise<void> {
     if (status.phase !== 'chapter-preview-ready' || status.chapterNavigation.current !== 1) return;
     clearInterval(advance); void vscode.commands.executeCommand('idlepage.nextChapter');
   }, 1000);
+  if (process.env.IDLEPAGE_HIDDEN_SMOKE === '1') await verifyHiddenReading(api, extension.extensionPath);
   // Interactive live verification host. The user can close this window normally.
   await new Promise<void>(() => {});
 }

@@ -59,6 +59,12 @@
           "default": true,
           "scope": "machine",
           "description": "发起阅读或接入任务时自动启动专用 Edge，并等待浏览器辅助扩展执行任务。"
+        },
+        "idlepage.browser.autoHide": {
+          "type": "boolean",
+          "default": true,
+          "scope": "machine",
+          "description": "读取任务中自动隐藏专用 Edge。需要登录时显示；手动显示进入排查状态，手动隐藏退出。"
         }
       },
       "title": "IdlePage"
