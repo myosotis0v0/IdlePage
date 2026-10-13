@@ -1,3 +1,18 @@
+export function textCells(character: string): number {
+  if (character === '\u200b') return 0;
+  return /[\u0000-\u007f]/.test(character) && !/[MW@%#&]/.test(character) ? 0.75 : 1;
+}
+/** Split the visible segment across native items without losing any characters. */
+export function splitStatusText(text: string, capacity: number): string[] {
+  const chunks: string[] = []; let current = ''; let width = 0;
+  for (const character of text) {
+    const next = textCells(character);
+    if (current && width + next > capacity) { chunks.push(current); current = ''; width = 0; }
+    current += character; width += next;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
 /** Character offsets survive changes in width; no chapter text is written to logs. */
 export class ReadingText {
   private text = '';
@@ -11,7 +26,7 @@ export class ReadingText {
     if (identity === this.identity) return;
     this.identity = identity; this.text = text; this.offset = 0;
     this.points = Array.from(text);
-    this.widths = this.points.map(c => /[\u0000-\u007f]/.test(c) ? 0.55 : 1);
+    this.widths = this.points.map(textCells);
     this.layout();
   }
   resize(capacity: number) { const next = Math.max(4, Math.floor(capacity)); if (this.capacity !== next) { this.capacity = next; this.layout(); } }

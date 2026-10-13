@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import { QidianAccessProbe } from '../../src/application/QidianAccessProbe';
 import { ReadingPrefetch } from '../../src/application/ReadingPrefetch';
-import { ReadingText } from '../../src/application/ReadingText';
+import { ReadingText, splitStatusText, textCells } from '../../src/application/ReadingText';
 import type { CachedChapter } from '../../src/domain/readingCache';
 const visible = { state: 'SiteContentVisible', pageKind: 'chapter', bodyCharacters: 1000, bookLinks: 0, verification: false, tooFrequent: false, captchaFrame: false };
 const catalog = { bookId: '100', total: 6, declaredCount: 6, truncated: false, strategy: 'catalog-container' as const,
@@ -100,5 +100,26 @@ test('text segmentation covers all code points, preserves offset on resize and k
   assert.equal(reconstructed, text); assert.equal(r.view().progress, 100);
   r.previous(); const offset = r.view().offset; r.resize(7); assert.equal(r.view().offset, offset);
   r.set('two', '$(eye)正文'); assert.equal(r.view().progress, 0); assert.ok(!r.view().text.includes('$(eye)'));
+});
+
+test('native 40vw cap is respected by multi-item segments without clipping or skipping text', () => {
+  const text = '中文MW😀abc。'.repeat(120);
+  for (const width of [640, 1000, 2048]) for (const percentage of [10, 30, 60, 80]) {
+    const slots = Math.ceil(percentage / 30);
+    const capacity = Math.max(4, Math.floor((width * percentage / 100 / slots - 24) / 13));
+    const reader = new ReadingText(); reader.resize(capacity * slots - (slots - 1)); reader.set('fixture', text);
+    let all = '';
+    do {
+      const segment = reader.view().text;
+      const chunks = splitStatusText(segment, capacity);
+      assert.equal(chunks.join(''), segment); assert.ok(chunks.length <= slots);
+      for (const chunk of chunks) {
+        const cells = [...chunk].reduce((n, c) => n + textCells(c), 0);
+        assert.ok(cells * 13 + 16 < width * 0.4);
+      }
+      all += chunks.join('');
+    } while (reader.next());
+    assert.equal(all, text);
+  }
 });
 
