@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { chapterPreview, chapterFailureMessage } from '../ui/chapterPreview';
 import { catalogPreview } from '../ui/catalogPreview';
 import { bookshelfPreview } from '../ui/bookshelfPreview';
 import { randomBytes } from 'node:crypto';
@@ -22,6 +23,8 @@ export async function activate(context: vscode.ExtensionContext) {
   let lastDisplay = '';
   let bookshelfShown = false;
   let catalogShown = false;
+  let chapterShown = false;
+  let chapterPanel: vscode.WebviewPanel | undefined;
   let catalogPanel: vscode.WebviewPanel | undefined;
   let preview: vscode.WebviewPanel | undefined;
   const showBookshelf = () => {
@@ -44,10 +47,21 @@ export async function activate(context: vscode.ExtensionContext) {
     const title = probe.getBookshelf()?.books.find(book => book.id === catalog.bookId)?.title ?? catalog.bookId;
     catalogPanel.webview.html = catalogPreview(catalog, title); catalogPanel.reveal();
   };
+  const showChapter = () => {
+    const result = probe.getChapter(); if (!result) { void vscode.window.showInformationMessage('尚未收到正文获取结果。'); return; }
+    if (!chapterPanel) {
+      chapterPanel = vscode.window.createWebviewPanel('idlepage.chapter', 'IdlePage：正文核对', vscode.ViewColumn.Active, { enableScripts: false });
+      chapterPanel.onDidDispose(() => { chapterPanel = undefined; }); context.subscriptions.push(chapterPanel);
+    }
+    chapterPanel.webview.html = chapterPreview(result); chapterPanel.reveal();
+  };
   const update = () => {
     const snapshot = probe.snapshot();
     const state = snapshot.report?.state;
     const display = state === 'AccessBlocked' ? '访问受阻' : state === 'NeedsLogin' ? '需要登录' :
+      snapshot.phase === 'chapter-preview-ready' ? `正文 ${snapshot.chapterSummary?.characters ?? 0} 字符待核对` :
+      snapshot.phase === 'chapter-unavailable' ? '正文暂不可获取' :
+      ['waiting-chapter', 'receiving-chapter'].includes(snapshot.phase) ? '正在获取正文' :
       snapshot.phase === 'catalog-preview-ready' ? `目录 ${snapshot.catalogSummary?.count ?? 0} 章待核对` :
       snapshot.phase === 'catalog-not-ready' ? '尚未找到目录章节' :
       snapshot.phase === 'waiting-catalog' ? '正在打开目录' :
@@ -55,7 +69,11 @@ export async function activate(context: vscode.ExtensionContext) {
       snapshot.bookshelfSummary ? `书单 ${snapshot.bookshelfSummary.count} 本待核对` : snapshot.phase === 'probe-complete' ? '书架访问完成' :
       snapshot.lastSeenAt ? '浏览器已连接' : '等待浏览器';
     if (snapshot.phase === 'catalog-preview-ready' && !catalogShown) { catalogShown = true; showCatalog(); }
-    if (snapshot.bookshelfSummary && !bookshelfShown && !snapshot.phase.includes('catalog')) { bookshelfShown = true; showBookshelf(); }
+    if (['chapter-preview-ready', 'chapter-unavailable'].includes(snapshot.phase) && !chapterShown) {
+      chapterShown = true; showChapter(); const result = probe.getChapter();
+      if (result?.status === 'unavailable') void vscode.window.showWarningMessage(chapterFailureMessage[result.reason]);
+    }
+    if (snapshot.bookshelfSummary && !bookshelfShown && !/catalog|chapter/.test(snapshot.phase)) { bookshelfShown = true; showBookshelf(); }
     status.text = `IdlePage: ${display}`;
     status.tooltip = '起点接入验证：点击查看连接状态';
     if (display !== lastDisplay) { output.appendLine(display); lastDisplay = display; }
@@ -96,7 +114,11 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('idlepage.showBookshelf', showBookshelf),
       vscode.commands.registerCommand('idlepage.extractCatalog', () => { catalogShown = false; probe.startCatalogExtraction(); update(); }),
       vscode.commands.registerCommand('idlepage.showCatalog', showCatalog),
+      vscode.commands.registerCommand('idlepage.extractChapter', () => { chapterShown = false; probe.startChapterExtraction(); update(); }),
+      vscode.commands.registerCommand('idlepage.showChapter', showChapter),
     );
+    const expiryTimer = setInterval(() => { if (probe.expireChapter()) update(); }, 1000);
+    context.subscriptions.push({ dispose: () => clearInterval(expiryTimer) });
     return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory };
   } catch (error) {
     await bridge?.close(); bridge = undefined;

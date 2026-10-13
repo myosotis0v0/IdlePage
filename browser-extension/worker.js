@@ -20,14 +20,16 @@ async function poll() {
     const task = state.task;
     if (!task) { await chrome.storage.local.set({ activeTask: null }); return; }
     const safeCatalog = task.kind === 'catalog' && /^\d{1,20}$/.test(task.bookId ?? '') && task.url === `https://www.qidian.com/book/${task.bookId}/#Catalog`;
-    if ((!safeCatalog && !['https://www.qidian.com/', 'https://my.qidian.com/bookcase/'].includes(task.url)) || typeof task.id !== 'string') return;
+    const safeChapter = task.kind === 'chapter' && /^\d{1,20}$/.test(task.bookId ?? '') &&
+      (new RegExp(`^https://(?:www|vipreader)\\.qidian\\.com/chapter/${task.bookId}/\\d{1,20}/?$`).test(task.url) || /^https:\/\/read\.qidian\.com\/chapter\/[a-zA-Z0-9_-]{1,80}\/[a-zA-Z0-9_-]{1,80}\/?$/.test(task.url));
+    if ((!safeCatalog && !safeChapter && !['https://www.qidian.com/', 'https://my.qidian.com/bookcase/'].includes(task.url)) || typeof task.id !== 'string') return;
     const { activeTask } = await chrome.storage.local.get('activeTask');
-    if (activeTask?.id === task.id && activeTask.protocolVersion === 3) {
+    if (activeTask?.id === task.id && activeTask.protocolVersion === 4) {
       try { await chrome.tabs.get(activeTask.tabId); return; }
       catch { if (state.report?.state === 'AccessBlocked') return; }
     }
     const tab = await chrome.tabs.create({ url: task.url, active: task.kind === 'access' });
-    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 3 } });
+    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 4 } });
   } catch (error) {
     const code = /^BridgeStatus\d{3}$/.test(error?.message ?? '') ? error.message :
       error?.name === 'TimeoutError' ? 'BridgeTimeout' : 'BridgeNetworkError';
@@ -37,12 +39,20 @@ async function poll() {
 async function handleObservation(message, sender) {
   const { activeTask } = await chrome.storage.local.get('activeTask');
   if (!activeTask || activeTask.tabId !== sender.tab.id) return { ignored: true };
+  if (['idlepage-chapter', 'idlepage-chapter-diagnostics'].includes(message.type)) {
+    const url = new URL(sender.url); const target = new URL(activeTask.url);
+    if (activeTask.kind !== 'chapter' || url.origin !== target.origin || url.pathname.replace(/\/$/, '') !== target.pathname.replace(/\/$/, '')) return { ignored: true };
+    const reply = await request(message.type === 'idlepage-chapter' ? '/v1/chapter/result' : '/v1/chapter/diagnostics', { method: 'POST', body: JSON.stringify({ taskId: activeTask.id, report: message.batch }) });
+    await chrome.storage.local.set({ phase: reply.phase, chapterSummary: reply.chapterSummary ?? null });
+    if (['chapter-preview-ready', 'chapter-unavailable'].includes(reply.phase)) await poll();
+    return { accepted: true };
+  }
   if (message.type === 'idlepage-catalog') {
     const url = new URL(sender.url);
     if (activeTask.kind !== 'catalog' || !['www.qidian.com', 'book.qidian.com'].includes(url.hostname) || !new RegExp(`^/(?:book|info)/${activeTask.bookId}(?:/catalog/?)?/?$`).test(url.pathname)) return { ignored: true };
     const reply = await request('/v1/catalog/result', { method: 'POST', body: JSON.stringify({ taskId: activeTask.id, report: message.batch }) });
     await chrome.storage.local.set({ phase: reply.phase, catalogSummary: reply.catalogSummary ?? null });
-    if (reply.phase === 'catalog-preview-ready') await poll();
+    if (['catalog-preview-ready', 'waiting-chapter'].includes(reply.phase)) await poll();
     return { accepted: true };
   }
   if (message.type === 'idlepage-bookshelf') {
@@ -63,10 +73,10 @@ async function handleObservation(message, sender) {
     await chrome.storage.local.set({ activeTask: { ...activeTask, attentionShown: true } });
   }
   await poll();
-  return { accepted: true, bookshelfRequested: activeTask.kind === 'bookshelf-list', catalogRequested: activeTask.kind === 'catalog', bookId: activeTask.bookId };
+  return { accepted: true, bookshelfRequested: activeTask.kind === 'bookshelf-list', catalogRequested: activeTask.kind === 'catalog', chapterRequested: activeTask.kind === 'chapter', bookId: activeTask.bookId };
 }
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (!['idlepage-observation', 'idlepage-bookshelf', 'idlepage-catalog'].includes(message?.type) || sender.frameId !== 0 || !sender.tab) return;
+  if (!['idlepage-observation', 'idlepage-bookshelf', 'idlepage-catalog', 'idlepage-chapter', 'idlepage-chapter-diagnostics'].includes(message?.type) || sender.frameId !== 0 || !sender.tab) return;
   let url;
   try { url = new URL(sender.url); } catch { return; }
   if (url.protocol !== 'https:' || !url.hostname.endsWith('.qidian.com')) return;

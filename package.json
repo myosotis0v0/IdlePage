@@ -17,7 +17,7 @@
     "test:extension": "npm run build && node scripts/test-extension.mjs",
     "vscode:prepublish": "npm run build",
     "dev:live": "npm run build && node scripts/live-extension.mjs",
-    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js && node --check browser-extension/bookshelf.js && node --check browser-extension/catalog.js"
+    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js && node --check browser-extension/bookshelf.js && node --check browser-extension/catalog.js && node --check browser-extension/chapter.js"
   },
   "engines": {
     "node": ">=22",
@@ -85,6 +85,14 @@
       {
         "command": "idlepage.showCatalog",
         "title": "IdlePage: 查看本次目录"
+      },
+      {
+        "command": "idlepage.extractChapter",
+        "title": "IdlePage: 测试第一章正文获取"
+      },
+      {
+        "command": "idlepage.showChapter",
+        "title": "IdlePage: 查看本次正文结果"
       }
     ]
   }

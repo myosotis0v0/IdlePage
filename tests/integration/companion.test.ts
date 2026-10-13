@@ -63,7 +63,13 @@ async function harness(t: { after(fn: () => Promise<void>): void }, online = tru
     if (events.message({ type: 'idlepage-catalog', batch }, { frameId: 0, url, tab: { id: data.activeTask?.tabId } }, resolve) !== true) resolve({ ignored: true });
   });
   const poll = () => context.__pollForTest();
-  return { data, tabs, updates, emit, emitShelf, emitCatalog, poll, network, closed, probe };
+  const emitChapter = (batch: unknown, url = 'https://www.qidian.com/chapter/100/1/') => new Promise<any>(resolve => {
+    if (events.message({ type: 'idlepage-chapter', batch }, { frameId: 0, url, tab: { id: data.activeTask?.tabId } }, resolve) !== true) resolve({ ignored: true });
+  });
+  const emitChapterDiagnostics = (batch: unknown) => new Promise<any>(resolve => {
+    if (events.message({ type: 'idlepage-chapter-diagnostics', batch }, { frameId: 0, url: 'https://www.qidian.com/chapter/100/1/', tab: { id: data.activeTask?.tabId } }, resolve) !== true) resolve({ ignored: true });
+  });
+  return { data, tabs, updates, emit, emitShelf, emitCatalog, emitChapter, emitChapterDiagnostics, poll, network, closed, probe };
 }
 test('production companion and real HTTP server complete tasks without extraction clicks', async t => {
   const h = await harness(t);
@@ -151,4 +157,21 @@ test('catalog pipeline selects first shelf book, receives ordered batches, and r
   assert.equal(h.data.phase, 'catalog-preview-ready');
   assert.equal(h.data.catalogSummary.count, 2);
   assert.ok(!JSON.stringify(h.data).includes('Fixture chapter'));
+});
+
+test('chapter task navigates to selected catalog URL and transfers only sanitized summary to browser storage', async t => {
+  const h = await harness(t); h.probe.startChapterExtraction(); await h.poll();
+  await h.emit({ ...visible, pageKind: 'bookshelf' }, { url: 'https://my.qidian.com/bookcase/' });
+  await h.emitShelf({ books: [{ id: '100', title: 'Fixture book', url: 'https://www.qidian.com/book/100/' }], strategy: 'table', anchorCount: 1, truncated: false, pagination: 'not-detected', containerHints: [] });
+  await h.emit({ ...visible, pageKind: 'book' }, { url: 'https://www.qidian.com/book/100/' });
+  await h.emitCatalog({ bookId: '100', offset: 0, total: 1, declaredCount: null, truncated: false, strategy: 'catalog-container', chapters: [{ id: '1', title: 'Fixture chapter', volume: '', payment: 'unknown', url: 'https://www.qidian.com/chapter/100/1/' }] });
+  assert.equal(h.data.activeTask.kind, 'chapter'); assert.equal(h.tabs.at(-1)?.url, 'https://www.qidian.com/chapter/100/1/');
+  const ack = await h.emit({ ...visible, pageKind: 'chapter', bookLinks: 0 }, { url: 'https://www.qidian.com/chapter/100/1/' }); assert.equal(ack.chapterRequested, true);
+  assert.equal((await h.emitChapterDiagnostics({ paragraphs: 3, containers: ['div.read-content'] })).accepted, true);
+  assert.equal(h.probe.snapshot().chapterDiagnostics?.paragraphs, 3);
+  const batch = { status: 'available', offset: 0, total: 16, text: 'Fixture body abc' };
+  assert.equal((await h.emitChapter(batch, 'https://www.qidian.com/chapter/100/2/')).ignored, true);
+  assert.equal((await h.emitChapter(batch)).accepted, true);
+  assert.equal(h.data.phase, 'chapter-preview-ready'); assert.equal(h.data.chapterSummary.characters, 16);
+  assert.ok(!JSON.stringify(h.data).includes('Fixture body'));
 });

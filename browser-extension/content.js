@@ -12,6 +12,12 @@
   let catalogOffset = 0;
   let catalogSent = false;
   let emptyCatalogSent = false;
+  let chapterRequested = false;
+  let chapterSent = false;
+  let chapterSignature = '';
+  let chapterStable = 0;
+  let chapterOffset = 0;
+  let chapterDiagnosed = false;
   let sending = false;
   async function observe() {
     if (sending) return;
@@ -33,9 +39,9 @@
     const bodyCharacters = [...text].length;
     const loginFrame = [...document.querySelectorAll('iframe')].some(frame => /passport\.(?:qidian|yuewen)\.com|ptlogin\.qidian\.com/.test(frame.src) && frame.getClientRects().length > 0);
     const pageKind = loginFrame ? 'login' : /\/bookcase/.test(location.pathname) ? 'bookshelf' :
-      /passport|login/.test(location.hostname + location.pathname) ? 'login' : /\/(?:book|info)\/\d+/.test(location.pathname) ? 'book' : 'other';
+      /passport|login/.test(location.hostname + location.pathname) ? 'login' : /^\/chapter\//.test(location.pathname) ? 'chapter' : /\/(?:book|info)\/\d+/.test(location.pathname) ? 'book' : 'other';
     const state = verification || tooFrequent || captchaFrame ? 'AccessBlocked' :
-      pageKind === 'login' ? 'NeedsLogin' : bodyCharacters > 500 && (bookLinks > 0 || pageKind === 'book') ? 'SiteContentVisible' : 'Indeterminate';
+      pageKind === 'login' ? 'NeedsLogin' : bodyCharacters > 500 && (bookLinks > 0 || ['book', 'chapter'].includes(pageKind)) ? 'SiteContentVisible' : 'Indeterminate';
     // Send counts and status only; no DOM text, names, cookies or URL queries.
     const report = { state, pageKind, bodyCharacters, bookLinks, verification, tooFrequent, captchaFrame };
     const encoded = JSON.stringify(report);
@@ -43,7 +49,32 @@
     try {
       if (encoded !== last) {
         const response = await chrome.runtime.sendMessage({ type: 'idlepage-observation', report });
-        if (response?.accepted) { last = encoded; bookshelfRequested = response.bookshelfRequested === true; catalogRequested = response.catalogRequested === true; catalogBookId = response.bookId; }
+        if (response?.accepted) { last = encoded; bookshelfRequested = response.bookshelfRequested === true; catalogRequested = response.catalogRequested === true; chapterRequested = response.chapterRequested === true; catalogBookId = response.bookId; }
+      }
+      if (chapterRequested && !chapterSent && pageKind === 'chapter' && !['AccessBlocked', 'NeedsLogin'].includes(state)) {
+        if (!chapterDiagnosed) {
+          const batch = globalThis.IdlePageChapter?.diagnose(document);
+          if (batch) { const response = await chrome.runtime.sendMessage({ type: 'idlepage-chapter-diagnostics', batch }); if (response?.accepted) chapterDiagnosed = true; }
+        }
+        const chapter = globalThis.IdlePageChapter?.extract(document);
+        if (!chapter || chapter.status === 'pending') return;
+        const signature = JSON.stringify(chapter);
+        if (chapterOffset > 0 && signature !== chapterSignature) return;
+        chapterStable = signature === chapterSignature ? chapterStable + 1 : 1; chapterSignature = signature;
+        if (chapterStable < 3) return;
+        if (chapter.status === 'unavailable') {
+          const response = await chrome.runtime.sendMessage({ type: 'idlepage-chapter', batch: chapter });
+          if (response?.accepted) chapterSent = true;
+          return;
+        }
+        if (state !== 'SiteContentVisible') return;
+        while (chapterOffset < chapter.text.length) {
+          const batch = { status: 'available', offset: chapterOffset, total: chapter.text.length, text: chapter.text.slice(chapterOffset, chapterOffset + 2000) };
+          const response = await chrome.runtime.sendMessage({ type: 'idlepage-chapter', batch });
+          if (!response?.accepted) return;
+          chapterOffset += batch.text.length;
+        }
+        chapterSent = true; return;
       }
       if (catalogRequested && !catalogSent && state === 'SiteContentVisible' && pageKind === 'book') {
         if (!catalogActivated) {

@@ -46,5 +46,17 @@ export async function run(): Promise<void> {
   assert.ok(!(await catalogReply.text()).includes('Fixture chapter'));
   assert.equal(api.getBridgeStatus().phase, 'catalog-preview-ready');
   await vscode.commands.executeCommand('idlepage.showCatalog');
-  console.log('IdlePage extension-host smoke test passed (synthetic access, bookshelf and catalog; no Qidian requests).');
+  await vscode.commands.executeCommand('idlepage.extractChapter');
+  const chapterTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
+  assert.equal(chapterTask.kind, 'chapter');
+  assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: chapterTask.id, report: { ...report, pageKind: 'chapter', bookLinks: 0 } }) })).status, 200);
+  const body = 'Fixture chapter body';
+  const bodyReply = await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: chapterTask.id, report: { status: 'available', offset: 0, total: body.length, text: body } }) });
+  assert.equal(bodyReply.status, 200); assert.ok(!(await bodyReply.text()).includes(body));
+  assert.equal(api.getBridgeStatus().phase, 'chapter-preview-ready'); await vscode.commands.executeCommand('idlepage.showChapter');
+  await vscode.commands.executeCommand('idlepage.extractChapter');
+  const deniedTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
+  assert.equal((await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: deniedTask.id, report: { status: 'unavailable', reason: 'locked' } }) })).status, 200);
+  assert.equal(api.getBridgeStatus().phase, 'chapter-unavailable');
+  console.log('IdlePage extension-host smoke test passed (synthetic access, shelf, catalog and chapter success/failure; no Qidian requests).');
 }

@@ -1,5 +1,5 @@
 export type AccessState = 'SiteContentVisible' | 'NeedsLogin' | 'AccessBlocked' | 'Indeterminate';
-export type PageKind = 'other' | 'login' | 'bookshelf' | 'book';
+export type PageKind = 'other' | 'login' | 'bookshelf' | 'book' | 'chapter';
 export interface Observation {
   state: AccessState;
   pageKind: PageKind;
@@ -11,7 +11,7 @@ export interface Observation {
 }
 export interface BrowserTask {
   id: string;
-  kind: 'access' | 'bookshelf' | 'bookshelf-list' | 'catalog';
+  kind: 'access' | 'bookshelf' | 'bookshelf-list' | 'catalog' | 'chapter';
   url: string;
   bookId?: string;
 }
@@ -25,12 +25,12 @@ export function parseObservation(value: unknown): Observation | undefined {
   const keys = ['state', 'pageKind', 'bodyCharacters', 'bookLinks', 'verification', 'tooFrequent', 'captchaFrame'];
   if (Object.keys(r).some(key => !keys.includes(key))) return;
   if (!['SiteContentVisible', 'NeedsLogin', 'AccessBlocked', 'Indeterminate'].includes(r.state as string) ||
-      !['other', 'login', 'bookshelf', 'book'].includes(r.pageKind as string) ||
+      !['other', 'login', 'bookshelf', 'book', 'chapter'].includes(r.pageKind as string) ||
       !['bodyCharacters', 'bookLinks'].every(key => typeof r[key] === 'number' && Number.isSafeInteger(r[key]) && r[key] >= 0 && r[key] < 100000000) ||
       !['verification', 'tooFrequent', 'captchaFrame'].every(key => typeof r[key] === 'boolean')) return;
   const result = { ...r } as unknown as Observation;
   if (result.verification || result.tooFrequent || result.captchaFrame) result.state = 'AccessBlocked';
   else if (result.pageKind === 'login') result.state = 'NeedsLogin';
-  else if (result.state === 'SiteContentVisible' && (result.bodyCharacters <= 500 || result.bookLinks === 0 && result.pageKind !== 'book')) result.state = 'Indeterminate';
+  else if (result.state === 'SiteContentVisible' && (result.bodyCharacters <= 500 || result.bookLinks === 0 && !['book', 'chapter'].includes(result.pageKind))) result.state = 'Indeterminate';
   return result;
 }
