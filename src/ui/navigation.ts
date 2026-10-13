@@ -1,10 +1,13 @@
 import * as vscode from 'vscode';
 import type { QidianAccessProbe } from '../application/QidianAccessProbe';
 
-export const menuCommands = ['idlepage.openBookshelf', 'idlepage.showBrowser', 'idlepage.hideBrowser', 'idlepage.refreshBookshelf', 'idlepage.refreshAll', 'idlepage.cancelTask', 'idlepage.openSettings', 'idlepage.toggleReading', 'idlepage.retryReading', 'idlepage.selectReadingLocation', 'idlepage.openKeybindings'];
-export function hoverMenu(message: string, busy: boolean): vscode.MarkdownString {
+export const menuCommands = ['idlepage.openBookshelf', 'idlepage.showBrowser', 'idlepage.hideBrowser', 'idlepage.refreshBookshelf', 'idlepage.refreshAll', 'idlepage.cancelTask', 'idlepage.openSettings', 'idlepage.toggleReading', 'idlepage.retryReading', 'idlepage.selectReadingLocation', 'idlepage.openKeybindings', 'idlepage.prepareBrowser', 'idlepage.copyBrowserDirectory', 'idlepage.openBrowserExtensions'];
+export function hoverMenu(message: string, busy: boolean, setup?: { text: string; detail: string; active: boolean }): vscode.MarkdownString {
   const menu = new vscode.MarkdownString('', true);
   menu.appendMarkdown('**余页**\n\n'); menu.appendText(message);
+  if (setup?.text) { menu.appendMarkdown('\n\n'); menu.appendText(setup.detail); }
+  menu.appendMarkdown('\n\n[$(plug) 首次连接设置 / 重新设置](command:idlepage.prepareBrowser)\n\n');
+  if (setup?.text) menu.appendMarkdown('[复制扩展目录](command:idlepage.copyBrowserDirectory) · [打开 Edge 扩展页](command:idlepage.openBrowserExtensions)\n\n');
   menu.appendMarkdown('\n\n---\n\n[$(library) 进入书架](command:idlepage.openBookshelf)\n\n[$(eye) 显示专用浏览器](command:idlepage.showBrowser)　[$(eye-closed) 隐藏](command:idlepage.hideBrowser)\n\n[$(refresh) 刷新书架](command:idlepage.refreshBookshelf)\n\n[$(refresh) 全部刷新](command:idlepage.refreshAll)\n\n');
   if (busy) menu.appendMarkdown('[$(close) 取消当前任务](command:idlepage.cancelTask)\n\n');
   menu.appendMarkdown('[隐藏/恢复阅读](command:idlepage.toggleReading)　[重试预取](command:idlepage.retryReading)\n\n');

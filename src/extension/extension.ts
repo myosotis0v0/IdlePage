@@ -1,4 +1,5 @@
 import { ReadingDemo } from '../ui/ReadingDemo';
+import { SetupGuide } from '../application/SetupGuide';
 import { ReadingLocation } from '../ui/ReadingLocation';
 import { StatusReader } from '../ui/StatusReader';
 import { ReadingPrefetch } from '../application/ReadingPrefetch';
@@ -47,6 +48,7 @@ export async function activate(context: vscode.ExtensionContext) {
   status.text = '$(book)'; status.tooltip = hoverMenu('正在启动', false); status.show();
   context.subscriptions.push(output, status);
   const storage = context.globalStorageUri.fsPath;
+  const setup = new SetupGuide(context.globalState.get<boolean>('idlepage.setupCompleted', false));
   const cacheEnabled = vscode.workspace.getConfiguration('idlepage').get<boolean>('cache.enabled', true);
   const probe = new QidianAccessProbe(cacheEnabled);
   probe.invalidateTask();
@@ -115,6 +117,10 @@ export async function activate(context: vscode.ExtensionContext) {
   const update = () => {
     const snapshot = { ...probe.snapshot(), cache: cache?.summary(), browserConnection: browserSession?.state,
       browserWindow: { mode: browserWindows.mode, lastAutomaticControl: visibility.lastResult } };
+    if (setup.observe(snapshot)) {
+      void context.globalState.update('idlepage.setupCompleted', true);
+      manageVisibility = true; void visibility.requestHide();
+    }
     if (cache && cachedRevision !== probe.cacheRevision()) {
       cachedRevision = probe.cacheRevision();
       const shelf = probe.getBookshelf(), catalog = probe.getCatalog(), chapter = probe.cacheChapter();
@@ -176,8 +182,9 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     }
     if (diagnosticPreviews && snapshot.bookshelfSummary && !bookshelfShown && !/catalog|chapter/.test(snapshot.phase)) { bookshelfShown = true; showBookshelf(); }
-    status.text = '$(book)';
-    status.tooltip = hoverMenu(refreshing ? '正在关闭旧页面并重新获取书架…' : display.replace(/待核对/g, '已就绪'), refreshing || !!probe.currentTaskId());
+    const guide = setup.view();
+    status.text = guide.text ? `$(book) ${guide.text}` : '$(book)';
+    status.tooltip = hoverMenu(guide.text || (refreshing ? '正在关闭旧页面并重新获取书架…' : display.replace(/待核对/g, '已就绪')), setup.active || refreshing || !!probe.currentTaskId(), guide);
     navigation?.update();
     if (display !== lastDisplay) { output.appendLine(display); lastDisplay = display; }
     reportWrites = reportWrites.then(() => writeFile(join(storage, 'bridge-report.json'), JSON.stringify(snapshot, null, 2) + '\n')).catch(() => { output.appendLine('状态记录写入失败'); });
@@ -193,7 +200,12 @@ export async function activate(context: vscode.ExtensionContext) {
     const port = vscode.workspace.getConfiguration('idlepage').get<number>('bridge.port', 17655);
     const origin = await readCompanionOrigin(context.extensionPath);
     bridge = new LocalBridgeServer({ port, token, origin, probe, onChanged: update,
-      onContact: () => browserSession?.noteContact(),
+      onContact: () => {
+        browserSession?.noteContact();
+        if (setup.contact()) {
+          probe.setReadingMode(false); probe.startBookshelfExtraction(); manageVisibility = true;
+        }
+      },
       onRejected: (reason, method) => {
         // Coarse diagnostic only: never record headers, credentials, bodies or account information.
         void writeFile(join(storage, 'bridge-diagnostics.json'), JSON.stringify({ reason, method, observedAt: new Date().toISOString() })).catch(() => {});
@@ -241,7 +253,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }).catch(() => { if (probe.failConnection(id)) { output.appendLine('无法接管专用浏览器的生命周期，请检查其他 IdlePage 服务窗口。'); update(); } });
     };
     const refreshBookshelf = () => {
-      if (refreshing || shuttingDown) return false;
+      if (setup.active || refreshing || shuttingDown) return false;
       selectionEpoch++; prefetch?.pause(); diagnosticPreviews = false; probe.startBookshelfExtraction(); update(); ensureBrowser(); return true;
     };
     navigation = new Navigation(probe, {
@@ -284,7 +296,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
     };
     const refreshAll = async () => {
-      if (refreshing || shuttingDown) return false;
+      if (setup.active || refreshing || shuttingDown) return false;
       const epoch = ++selectionEpoch; prefetch?.pause(); refreshing = true; diagnosticPreviews = false; probe.invalidateTask(); update();
       try {
         await lifetime.start();
@@ -298,7 +310,7 @@ export async function activate(context: vscode.ExtensionContext) {
       finally { refreshing = false; update(); }
     };
     const action = (name: string, fn: () => unknown) => vscode.commands.registerCommand(name, () => {
-      if (refreshing || shuttingDown) return 'busy';
+      if (setup.active || refreshing || shuttingDown) return 'busy';
       selectionEpoch++; prefetch?.pause(); probe.setReadingMode(false); diagnosticPreviews = true; return fn();
     });
     context.subscriptions.push(
@@ -318,12 +330,16 @@ export async function activate(context: vscode.ExtensionContext) {
         if (readingFailure === 'prefetch') prefetch?.retry();
         else { prefetch?.pause(); chapterShown = false; if (probe.retryReadingChapter()) { update(); ensureBrowser(); } }
       }),
-      vscode.commands.registerCommand('idlepage.openBookshelf', () => { if (!refreshing) navigation!.openShelf(); }),
+      vscode.commands.registerCommand('idlepage.openBookshelf', () => {
+        if (refreshing || setup.active) return;
+        if (setup.stage === 'offer' && !probe.getBookshelf()) return vscode.commands.executeCommand('idlepage.prepareBrowser');
+        setup.dismiss(); update(); navigation!.openShelf();
+      }),
       vscode.commands.registerCommand('idlepage.refreshBookshelf', () => { if (refreshBookshelf()) navigation!.openShelf(); }),
       vscode.commands.registerCommand('idlepage.refreshAll', refreshAll),
       vscode.commands.registerCommand('idlepage.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:myosotis0v0.idle-page')),
       vscode.commands.registerCommand('idlepage.openKeybindings', () => vscode.commands.executeCommand('workbench.action.openGlobalKeybindings', '@ext:myosotis0v0.idle-page')),
-      vscode.commands.registerCommand('idlepage.cancelTask', () => { selectionEpoch++; const wasPrefetch = probe.isPrefetching(); prefetch?.pause(); const cancelled = probe.cancel() || wasPrefetch; update(); if (diagnosticPreviews && probe.getReadingChapter()) showChapter(); return cancelled || refreshing; }),
+      vscode.commands.registerCommand('idlepage.cancelTask', () => { const settingUp = setup.active; setup.dismiss(); selectionEpoch++; const wasPrefetch = probe.isPrefetching(); prefetch?.pause(); const cancelled = probe.cancel() || wasPrefetch; update(); if (diagnosticPreviews && probe.getReadingChapter()) showChapter(); return settingUp || cancelled || refreshing; }),
       vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('idlepage.reading.widthPercent') || event.affectsConfiguration('window.zoomLevel')) reader.render();
         if (cache && event.affectsConfiguration('idlepage.cache.maxSizeMB')) void cache.setLimit(vscode.workspace.getConfiguration('idlepage').get<number>('cache.maxSizeMB', 200) * 1024 * 1024).catch(warnCache);
@@ -333,13 +349,25 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('idlepage.showStatus', () => {
         output.appendLine(JSON.stringify(probe.snapshot(), null, 2)); output.show(true);
       }),
-      action('idlepage.prepareBrowser', async () => {
+      vscode.commands.registerCommand('idlepage.copyBrowserDirectory', () => vscode.env.clipboard.writeText(companion.directory)),
+      vscode.commands.registerCommand('idlepage.openBrowserExtensions', async () => {
+        if (refreshing || shuttingDown) return;
+        try { await lifetime.launch(openEdgeExtensions); await browserWindows.revealForAttention(); }
+        catch { setup.fail('无法打开 Edge，请确认已安装 Microsoft Edge 后重新设置'); update(); }
+      }),
+      vscode.commands.registerCommand('idlepage.prepareBrowser', async () => {
+        if (refreshing || shuttingDown || !setup.start()) return;
+        const epoch = ++selectionEpoch;
+        prefetch?.pause(); navigation?.dispose(); probe.invalidateTask(); probe.setReadingMode(false);
+        diagnosticPreviews = false; manageVisibility = false; update();
         try {
-          await lifetime.launch(openEdgeExtensions);
           await vscode.env.clipboard.writeText(companion.directory);
-          output.show(true);
-          void vscode.window.showInformationMessage('浏览器扩展目录已复制。在 Edge 开发人员模式中加载该目录；安装后自动连接。');
-        } catch { void vscode.window.showErrorMessage('无法打开 Edge，请手动在普通 Edge 中加载 IdlePage 浏览器辅助扩展。'); output.show(true); }
+          await lifetime.launch(openEdgeExtensions);
+          if (epoch !== selectionEpoch || shuttingDown || !setup.active) return;
+          await browserWindows.revealForAttention();
+          // Leave installation visible, then restore automatic hiding after contact.
+          setup.opened(); update();
+        } catch { if (epoch === selectionEpoch && setup.active) { setup.fail('准备失败，请确认 Edge 已安装后重新设置'); update(); } }
       }),
       action('idlepage.restartProbe', () => { probe.restart(); update(); ensureBrowser(); }),
       action('idlepage.extractBookshelf', () => { bookshelfShown = false; probe.startBookshelfExtraction(); update(); ensureBrowser(); }),
@@ -349,7 +377,7 @@ export async function activate(context: vscode.ExtensionContext) {
       action('idlepage.extractChapter', () => { chapterShown = false; probe.startChapterExtraction(); update(); ensureBrowser(); }),
       vscode.commands.registerCommand('idlepage.showChapter', showChapter),
       vscode.commands.registerCommand('idlepage.nextChapter', () => {
-        if (refreshing || shuttingDown) return 'busy'; selectionEpoch++; prefetch?.pause();
+        if (setup.active || refreshing || shuttingDown) return 'busy'; selectionEpoch++; prefetch?.pause();
         probe.setReadingMode(!diagnosticPreviews);
         const result = probe.startNextChapter();
         if (result !== 'started') {
@@ -358,7 +386,10 @@ export async function activate(context: vscode.ExtensionContext) {
         chapterShown = false; if (diagnosticPreviews) showChapter(); update(); ensureBrowser(); return result;
       }),
     );
-    const expiryTimer = setInterval(() => { if (probe.expireChapter()) update(); }, 1000);
+    const expiryTimer = setInterval(() => {
+      if (setup.expire()) { selectionEpoch++; probe.invalidateTask(); update(); }
+      else if (probe.expireChapter()) update();
+    }, 1000);
     context.subscriptions.push({ dispose: () => clearInterval(expiryTimer) });
     return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory,
       getBrowserWindowMode: () => browserWindows.mode, getCacheStatus: () => cache?.summary(),

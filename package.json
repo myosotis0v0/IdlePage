@@ -1,6 +1,6 @@
 {
   "name": "idle-page",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "private": true,
   "repository": {
     "type": "git",
@@ -113,6 +113,14 @@
       "title": "IdlePage"
     },
     "commands": [
+      {
+        "command": "idlepage.copyBrowserDirectory",
+        "title": "余页: 复制浏览器扩展目录"
+      },
+      {
+        "command": "idlepage.openBrowserExtensions",
+        "title": "余页: 打开 Edge 扩展管理页"
+      },
       {
         "command": "idlepage.openKeybindings",
         "title": "余页: 配置快捷键"

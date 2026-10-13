@@ -32,7 +32,8 @@ export async function run(): Promise<void> {
   const keybindings = extension.packageJSON.contributes.keybindings;
   assert.equal(keybindings.find((item: { command: string }) => item.command === 'idlepage.toggleReading').when.includes('inputFocus'), false);
   assert.ok(commands.includes('idlepage.openKeybindings'));
-  assert.equal(api.getEntryStatus().text, '$(book)'); assert.equal(api.getEntryStatus().hasClick, false);
+  assert.ok(api.getEntryStatus().text.startsWith('$(book)')); assert.equal(api.getEntryStatus().hasClick, false);
+  assert.ok(api.getEntryStatus().tooltip.includes('command:idlepage.prepareBrowser'));
   const hover = hoverMenu('[bad](command:evil)', true);
   assert.deepEqual(hover.isTrusted, { enabledCommands: menuCommands });
   assert.ok(!hover.value.includes('[bad](command:evil)'));

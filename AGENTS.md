@@ -20,3 +20,4 @@
 
 - browser-extension/ contains the shipped browser template. Never add pairing credentials there; generate paired copies in VS Code globalStorageUri. Browser worker tests belong in tests/, separate from the labs prototype.
 - Reading location is selectable from the top-level book hover menu: status bar (default), sidebar, or bottom panel. All locations share reading state and commands; switching location must not reset position or fetch content. Keep status-bar failure notices available for every location. Webview placement must not close the user's other views.
+- First-use setup starts from the book hover menu and reports actionable steps in the status bar. After loading the paired browser extension, connection, login detection and bookshelf retrieval advance automatically. Mark setup complete only after confirmed online bookshelf extraction; errors/cancellation stop the guide without hidden retries.
