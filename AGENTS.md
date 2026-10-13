@@ -9,5 +9,6 @@
 - Only login, re-login and verification within that login flow may require manual official-page interaction. After login, bookshelf pagination, catalog/chapter retrieval, session recovery and local progress persistence must be automatic. Never require manual browser navigation, extraction clicks or Cookie copying as the reading workflow.
 - Runtime access challenges fail automation acceptance: stop and report AccessBlocked instead of adopting recurring manual CAPTCHA handling. Do not automate purchases, subscription changes or bypass access controls.
 - Do not claim VIP extraction or session persistence works without authenticated live evidence.
+- Normal reading uses a hidden dedicated Edge window. Show it for manual login/re-login and hide it after verified login and task recovery. Access blocks and read failures stop the task with a VS Code notice. Provide explicit show/hide commands; an explicit diagnostic show must not be immediately overridden by automatic hiding. Control only windows positively identified as belonging to IdlePage's dedicated browser profile.
 
 - browser-extension/ contains the shipped browser template. Never add pairing credentials there; generate paired copies in VS Code globalStorageUri. Browser worker tests belong in tests/, separate from the labs prototype.
