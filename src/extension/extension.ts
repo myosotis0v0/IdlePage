@@ -362,7 +362,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push({ dispose: () => clearInterval(expiryTimer) });
     return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory,
       getBrowserWindowMode: () => browserWindows.mode, getCacheStatus: () => cache?.summary(),
-      getReaderStatus: () => ({ ...reader.state(), text: undefined }),
+      getReaderStatus: () => ({ ...reader.state(), text: undefined, chunks: undefined }),
       getEntryStatus: () => ({ text: status.text, hasClick: !!status.command, tooltip: (status.tooltip as vscode.MarkdownString)?.value }) };
   } catch (error) {
     await bridge?.close(); bridge = undefined;

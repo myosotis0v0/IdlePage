@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ReadingText, splitStatusText } from '../application/ReadingText';
+import { ReadingText } from '../application/ReadingText';
 import { WindowWidth } from '../infrastructure/WindowWidth';
 
 export class StatusReader implements vscode.Disposable {
@@ -14,7 +14,15 @@ export class StatusReader implements vscode.Disposable {
   private count = '';
   private hidden = false;
   private error?: string;
-  private geometry = new WindowWidth(width => { if (vscode.window.state.focused && this.width !== width) { this.width = width; this.render(); } });
+  private widthTimer?: ReturnType<typeof setTimeout>;
+  private geometry = new WindowWidth(width => {
+    if (!vscode.window.state.focused || this.width === width) return;
+    if (this.widthTimer) clearTimeout(this.widthTimer);
+    if (width < this.width) { this.width = width; this.render(); }
+    else if (width - this.width >= 26) this.widthTimer = setTimeout(() => {
+      if (vscode.window.state.focused) { this.width = width; this.render(); }
+    }, 300);
+  });
   constructor() {
     this.number.name = '余页章节'; this.bodies[0].name = '余页正文'; this.progress.name = '余页进度'; this.back.name = '余页返回阅读';
     this.bodies.forEach(item => { item.command = 'idlepage.nextSegment'; }); this.back.command = 'idlepage.returnReading'; this.back.text = '$(arrow-left) 返回阅读';
@@ -50,7 +58,7 @@ export class StatusReader implements vscode.Disposable {
       ? '[显示浏览器检查](command:idlepage.showBrowser) · [返回阅读](command:idlepage.returnReading) · [重试](command:idlepage.retryReading)'
       : '[上一段](command:idlepage.previousSegment) · [下一段](command:idlepage.nextSegment) · [下一章](command:idlepage.nextChapter) · [隐藏阅读](command:idlepage.toggleReading)\n\n[配置快捷键](command:idlepage.openKeybindings)');
     tooltip.isTrusted = { enabledCommands: ['idlepage.showBrowser', 'idlepage.returnReading', 'idlepage.retryReading', 'idlepage.previousSegment', 'idlepage.nextSegment', 'idlepage.nextChapter', 'idlepage.toggleReading', 'idlepage.openKeybindings'] };
-    const chunks = this.error ? [this.error] : splitStatusText(view.text || ' ', perItemCells);
+    const chunks = this.error ? [this.error] : view.chunks;
     // Partition by the same measured units used for pagination, never truncate.
     while (this.bodies.length < chunks.length) this.bodies.push(vscode.window.createStatusBarItem('idlepage.readingText' + this.bodies.length, vscode.StatusBarAlignment.Left, -2 - this.bodies.length));
     this.bodies.forEach((item, index) => {
@@ -64,5 +72,5 @@ export class StatusReader implements vscode.Disposable {
     this.progress.text = `${view.progress}%`; this.progress.show();
     if (this.error) this.back.show(); else this.back.hide();
   }
-  dispose() { this.changed.dispose(); this.geometry.dispose(); for (const item of [this.number, ...this.bodies, this.progress, this.back]) item.dispose(); }
+  dispose() { if (this.widthTimer) clearTimeout(this.widthTimer); this.changed.dispose(); this.geometry.dispose(); for (const item of [this.number, ...this.bodies, this.progress, this.back]) item.dispose(); }
 }

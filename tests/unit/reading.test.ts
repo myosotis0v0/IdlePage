@@ -111,7 +111,7 @@ test('native 40vw cap is respected by multi-item segments without clipping or sk
     let all = '';
     do {
       const segment = reader.view().text;
-      const chunks = splitStatusText(segment, capacity);
+      const chunks = reader.view().chunks;
       assert.equal(chunks.join(''), segment); assert.ok(chunks.length <= slots);
       for (const chunk of chunks) {
         const cells = [...chunk].reduce((n, c) => n + textCells(c), 0);
@@ -131,8 +131,55 @@ test('status item boundaries prefer punctuation, keep closing quotes and fall ba
     assert.equal(chunks.join(''), source);
   }
   assert.equal(splitStatusText('甲乙丙丁戊己。”庚辛壬癸子丑寅卯', 10)[0], '甲乙丙丁戊己。”');
-  assert.equal(splitStatusText('甲乙丙丁戊己庚辛壬癸子丑', 10)[0], '甲乙丙丁戊己庚辛壬癸');
-  assert.equal(splitStatusText('甲乙丙丁戊3.14庚辛壬癸', 10)[0], '甲乙丙丁戊3.14庚辛');
+  const unbroken = splitStatusText('甲乙丙丁戊己庚辛壬癸子丑', 10);
+  assert.equal(unbroken.join(''), '甲乙丙丁戊己庚辛壬癸子丑');
+  assert.ok(unbroken.every(chunk => chunk.length >= 3 && chunk.length <= 10), 'Balance away a two-character orphan tail');
+  assert.ok(splitStatusText('甲乙丙丁戊3.14庚辛壬癸', 10).some(chunk => chunk.includes('3.14')));
+});
+
+test('resizing anchors the exact source start and navigation restores the previous layout', () => {
+  const text = '窗边的灯亮着。他把书合上，听着风声；然后慢慢走到门口。'.repeat(8);
+  const reader = new ReadingText(); reader.resize(12, 2); reader.set('anchor', text);
+  const first = reader.view(); reader.next(); const second = reader.view();
+  assert.equal(second.offset, first.end);
+  reader.previous(); assert.deepEqual(reader.view(), first);
+  reader.next(); assert.deepEqual(reader.view(), second);
+  for (const capacity of [7, 19, 8, 30]) {
+    reader.resize(capacity, 2);
+    const view = reader.view();
+    assert.equal(view.offset, second.offset);
+    assert.equal(view.text, text.slice(view.offset, view.end));
+  }
+});
+
+test('sentence and paragraph boundaries beat later weak punctuation and attached closers stay together', () => {
+  const reader = new ReadingText(); reader.resize(10);
+  reader.set('sentence', '甲乙丙丁戊己。庚，辛壬癸子丑寅卯辰巳午未。');
+  assert.equal(reader.view().text, '甲乙丙丁戊己。');
+  reader.set('paragraph', '甲乙丙丁戊己\n庚，辛壬癸子丑寅卯辰巳午未。');
+  assert.equal(reader.view().text, '甲乙丙丁戊己 ');
+  reader.set('quotes', '甲乙丙丁戊己。”庚辛壬癸子丑寅卯。');
+  assert.equal(reader.view().text, '甲乙丙丁戊己。”');
+});
+
+test('joint layout preserves graphemes, tokens and source coverage across changing widths', () => {
+  const source = '窗外👨‍👩‍👧‍👦，Cafe\u0301售价1,234.56元……“明天见。”\r\n下一句hello结束。'.repeat(12);
+  const boundaries = new Set([0, ...Array.from(new Intl.Segmenter('zh', { granularity: 'grapheme' }).segment(source), part => part.index + part.segment.length)]);
+  const reader = new ReadingText(); reader.set('unicode', source);
+  let end = 0, reconstructed = '', page = 0;
+  do {
+    reader.resize([9, 15, 24, 6][page++ % 4], (page % 3) + 1);
+    const view = reader.view(); assert.equal(view.offset, end);
+    assert.ok(boundaries.has(view.offset) && boundaries.has(view.end));
+    assert.equal(view.chunks.join(''), view.text);
+    assert.equal(view.text, source.slice(view.offset, view.end).replace(/[\r\n\t]/g, ' '));
+    reconstructed += view.text; end = view.end;
+    assert.ok(page < source.length);
+  } while (reader.next());
+  assert.equal(end, source.length);
+  assert.equal(reconstructed, source.replace(/[\r\n\t]/g, ' '));
+  const tokens = splitStatusText('价格1,234.56元，hello朋友……明天见。', 12);
+  for (const token of ['1,234.56', 'hello', '……']) assert.ok(tokens.some(chunk => chunk.includes(token)), token);
 });
 
 test('punctuation-aware pages retain all text within the configured item count', () => {
@@ -141,7 +188,7 @@ test('punctuation-aware pages retain all text within the configured item count',
     const reader = new ReadingText(); reader.resize(capacity, slots); reader.set('punctuation', source);
     let reconstructed = '';
     do {
-      const chunks = splitStatusText(reader.view().text, capacity);
+      const chunks = reader.view().chunks;
       assert.ok(chunks.length <= slots);
       for (const chunk of chunks) assert.ok([...chunk].reduce((n, c) => n + textCells(c), 0) <= capacity);
       reconstructed += chunks.join('');

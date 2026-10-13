@@ -1,5 +1,7 @@
 # Repository boundaries
 
+- After every complete functional update, run appropriate checks and generate a fresh installable VSIX using npm run package:vsix. Increment the patch version for a new functional build; report the artifact path. Release bundles must not generate or include SHA256 checksum files, per user preference.
+
 - Production extension code belongs in src/. It must never import labs/.
 - Experimental Qidian browser probes belong in labs/qidian/; they are not shipped with the extension.
 - Tests for promoted production behavior belong in tests/. Browser feasibility probes are not production tests.

@@ -1,10 +1,10 @@
-# IdlePage 0.0.1 安装说明（Windows）
+# IdlePage 安装说明（Windows）
 
 发布包包括 VS Code 插件 VSIX、浏览器扩展模板及许可证。适用于 Windows 桌面版 VS Code 和 Microsoft Edge；安装成品无需 Node.js。浏览器扩展版本为 0.0.11。
 
 ## 1. 安装 VS Code 插件
 
-解压发布包。在 VS Code 的扩展页点击右上角 `…` → **从 VSIX 安装**，选择 `idle-page-0.0.1.vsix`，安装后按提示重载窗口。
+解压发布包。在 VS Code 的扩展页点击右上角 `…` → **从 VSIX 安装**，选择包内的 `idle-page-<版本号>.vsix`，安装后按提示重载窗口。
 
 只保留一个运行 IdlePage 本机服务的 VS Code 窗口，避免端口占用。测试用扩展开发窗口应先关闭。
 
@@ -38,4 +38,4 @@
 - 侧栏布局使用 VS Code 内置移动命令，与 Codex 的上下顺序可能因版本或已有布局不同；可拖动视图标题调整。
 - 网页结构变化、账号权限或站点验证可能影响获取；失败后停止任务并提示。
 
-SHA256SUMS.txt 用于校验包内 VSIX 和浏览器模板文件。Release 页面不需要上传任何 `.local` 目录、缓存、配对文件或个人浏览器目录。
+Release 页面不需要上传任何 `.local` 目录、缓存、配对文件或个人浏览器目录。

@@ -1,6 +1,6 @@
 {
   "name": "idle-page",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "repository": {
     "type": "git",
@@ -9,6 +9,8 @@
   "description": "A discreet VS Code novel reader with status bar reading, online book sources, and account authentication.",
   "type": "module",
   "scripts": {
+    "package:vsix": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -VsixOnly",
+    "package:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1",
     "probe:qidian": "node labs/qidian/cli.mjs public",
     "login:qidian": "node labs/qidian/cli.mjs session",
     "check:labs": "node --check labs/qidian/cli.mjs && node --check labs/qidian/browser.mjs && node --check labs/qidian/probe.mjs && node --check labs/qidian/manual-browser.mjs && node --check labs/qidian/diagnose.mjs && node --check labs/qidian/browser-companion/worker.js && node --check labs/qidian/browser-companion/content.js && node --check labs/qidian/browser-companion/status.js",
