@@ -1,17 +1,28 @@
 globalThis.IdlePageChapter = {
   diagnose(document) {
     const hints = new Set();
+    const annotationNodes = new Set();
+    const label = el => {
+      const safe = value => /^[a-zA-Z][a-zA-Z_-]{0,39}$/.test(value);
+      const id = safe(el.id) ? '#' + el.id : '';
+      const classes = [...el.classList].filter(safe).slice(0, 3).map(c => '.' + c).join('');
+      return el.tagName.toLowerCase() + id + classes;
+    };
     const paragraphs = [...document.querySelectorAll('p')].filter(el => (el.innerText ?? el.textContent ?? '').trim().length > 80);
     for (const paragraph of paragraphs.slice(0, 4)) {
       let el = paragraph.parentElement;
       for (let depth = 0; el && depth < 4; depth++, el = el.parentElement) {
-        const safe = value => /^[a-zA-Z][a-zA-Z_-]{0,39}$/.test(value);
-        const id = safe(el.id) ? '#' + el.id : '';
-        const classes = [...el.classList].filter(safe).slice(0, 3).map(c => '.' + c).join('');
-        hints.add(el.tagName.toLowerCase() + id + classes);
+        hints.add(label(el));
       }
     }
-    return { paragraphs: Math.min(paragraphs.length, 10000), containers: [...hints].slice(0, 12) };
+    for (const el of document.querySelectorAll('.chapter-wrapper main.content p *, .read-content p *, .chapter-content p *')) {
+      if (el.children.length || !/^\d+$/.test((el.textContent ?? '').trim())) continue;
+      annotationNodes.add(label(el));
+      let parent = el.parentElement;
+      for (let depth = 0; parent && parent.tagName !== 'P' && depth < 2; depth++, parent = parent.parentElement) annotationNodes.add(label(parent));
+      if (annotationNodes.size >= 12) break;
+    }
+    return { paragraphs: Math.min(paragraphs.length, 10000), containers: [...hints].slice(0, 12), annotationNodes: [...annotationNodes].slice(0, 12) };
   },
   extract(document) {
     const visible = el => typeof el.getClientRects !== 'function' || el.getClientRects().length > 0;
@@ -30,6 +41,10 @@ globalThis.IdlePageChapter = {
     // verification; do not claim unreadable glyphs are usable text.
     if (root.querySelector('canvas, img') || root.querySelector('[style*="font-family"]')) return { status: 'unavailable', reason: 'unsupported-content' };
     const copy = root.cloneNode(true);
+    // Remove explicit annotation widgets, never trailing digits in plain text.
+    for (const el of copy.querySelectorAll('.review-count, .comment-count, .paragraph-comment, .paragraph-review, [data-role="paragraph-comment"], [data-role="review-count"], [aria-label*="评论"], [title*="评论"]')) {
+      if (el.tagName !== 'P') el.remove();
+    }
     for (const el of copy.querySelectorAll('script, style, button, nav, .ad, .advertisement, .author-say, .authorSay, .chapter-end, [hidden], [aria-hidden="true"]')) el.remove();
     const paragraphs = [...copy.querySelectorAll('p')].map(textOf).filter(Boolean);
     const text = (paragraphs.length ? paragraphs.join('\n\n') : textOf(copy)).replace(/\r\n?/g, '\n').trim();

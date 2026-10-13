@@ -16,7 +16,7 @@ export class QidianAccessProbe {
   private chapterTotal = 0;
   private chapterTitle = '';
   private chapterDeadline = 0;
-  private chapterDiagnostics?: { paragraphs: number; containers: string[] };
+  private chapterDiagnostics?: { paragraphs: number; containers: string[]; annotationNodes?: string[] };
   private phase = 'waiting-access';
   private lastSeenAt?: string;
 
@@ -114,8 +114,9 @@ export class QidianAccessProbe {
     if (!this.task || this.task.kind !== 'chapter' || this.task.id !== taskId) return 'stale';
     if (!value || typeof value !== 'object' || Array.isArray(value)) return 'invalid';
     const r = value as Record<string, unknown>;
-    if (Object.keys(r).some(k => !['paragraphs', 'containers'].includes(k)) || !Number.isSafeInteger(r.paragraphs) || (r.paragraphs as number) < 0 || (r.paragraphs as number) > 10000 || !Array.isArray(r.containers) || r.containers.length > 12 || r.containers.some(c => typeof c !== 'string' || c.length > 180 || !/^[a-z][a-z0-9]*(?:[.#][a-zA-Z][a-zA-Z_-]{0,39})*$/.test(c))) return 'invalid';
-    this.chapterDiagnostics = { paragraphs: r.paragraphs as number, containers: [...r.containers] }; return 'accepted';
+    const labels = (value: unknown): value is string[] => Array.isArray(value) && value.length <= 12 && value.every(c => typeof c === 'string' && c.length <= 180 && /^[a-z][a-z0-9]*(?:[.#][a-zA-Z][a-zA-Z_-]{0,39})*$/.test(c));
+    if (Object.keys(r).some(k => !['paragraphs', 'containers', 'annotationNodes'].includes(k)) || !Number.isSafeInteger(r.paragraphs) || (r.paragraphs as number) < 0 || (r.paragraphs as number) > 10000 || !labels(r.containers) || r.annotationNodes !== undefined && !labels(r.annotationNodes)) return 'invalid';
+    this.chapterDiagnostics = { paragraphs: r.paragraphs as number, containers: [...r.containers], ...(r.annotationNodes ? { annotationNodes: r.annotationNodes as string[] } : {}) }; return 'accepted';
   }
   acceptCatalog(taskId: unknown, value: unknown): 'accepted' | 'stale' | 'invalid' {
     if (!this.task || this.task.kind !== 'catalog' || this.task.id !== taskId) return 'stale';

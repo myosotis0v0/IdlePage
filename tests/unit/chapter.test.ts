@@ -17,6 +17,11 @@ test('observed modern reading container is scoped to the chapter wrapper', () =>
   const result = extract('<main class="content"><p>无关侧栏</p></main><div class="chapter-wrapper"><div class="print"><main class="content relative r-font-black"><p>正文第一段。</p><p>正文第二段。</p></main></div></div>');
   assert.equal(result.status, 'available'); assert.equal(result.text, '正文第一段。\n\n正文第二段。');
 });
+
+test('comment counts are excluded while authored numbers at paragraph ends are preserved', () => {
+  const result = extract('<div class="read-content"><p>他说数字是53<span class="review-count">10</span></p><p>编号<span>3</span><a aria-label="段落评论">53</a></p><p>真正的数字结尾 2026</p><p>文中<span>10</span>也要保留<span class="paragraph-comment"><span>5</span></span></p></div>');
+  assert.equal(result.text, '他说数字是53\n\n编号3\n\n真正的数字结尾 2026\n\n文中10也要保留');
+});
 test('gates, previews, error text and unsupported glyphs are never accepted as body text', () => {
   for (const html of ['<div class="subscribe-wrap">订阅后可阅读</div>', '<div class="read-content"><p>试读结束</p></div>', '<div class="read-content"><p>请求失败</p></div>', '<div class="read-content"><p>\uE001</p></div>', '<div class="read-content"><canvas></canvas></div>']) assert.equal(extract(html).status, 'unavailable');
   assert.equal(extract('<div>普通页面</div>').status, 'pending');
