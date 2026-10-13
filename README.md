@@ -4,9 +4,13 @@ A discreet VS Code novel reader with status bar reading, online book sources, an
 
 自用 VS Code 小说阅读器，通过普通 Edge 中的浏览器伴随扩展接入起点中文网。账号登录由用户在官方页面完成，书架、目录和正文读取由 VS Code 发起，在 VS Code 中查看结果。
 
-![余页状态栏阅读与书本悬停菜单](media/reading-preview.png)
+![余页状态栏阅读与书本悬停菜单](media/statusbar-preview.png)
 
-*状态栏阅读效果示意，菜单以当前版本为准。*
+*状态栏阅读与功能菜单，首次连接设置也在此进入。*
+
+![余页章节目录与搜索](media/catalog-preview.png)
+
+*按章节名、序号或卷名搜索，选择章节开始阅读。*
 
 ## 功能
 
@@ -30,9 +34,13 @@ A discreet VS Code novel reader with status bar reading, online book sources, an
 - 从源码运行需要 Node.js 22+ 和 npm。
 - 一个用于运行 IdlePage 本机服务的 VS Code 窗口。
 
-## 从源码运行
+## 安装
 
 也可以直接安装 Release 中的 `.vsix`：VS Code 扩展页 → `…` → **从 VSIX 安装**，选中下载的文件，安装后按提示重载。此方式不需要 Node.js。随后按下文“接入起点中文网”完成浏览器扩展的首次配对安装。
+
+VSIX 已内置浏览器扩展模板，点击“首次连接设置”会生成本机配对版本，无需另行下载压缩包。首次仍需在专用 Edge 中手动加载生成的扩展目录。
+
+## 从源码运行
 
 ```powershell
 npm ci

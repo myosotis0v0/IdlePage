@@ -25,7 +25,9 @@ try {
   Copy-Item -LiteralPath (Join-Path $project 'README.md') -Destination $stage
   $media = Join-Path $stage 'media'
   New-Item -ItemType Directory -Path $media | Out-Null
-  Copy-Item -LiteralPath (Join-Path $project 'media/reading-preview.png') -Destination $media
+  foreach ($file in @('statusbar-preview.png','catalog-preview.png')) {
+    Copy-Item -LiteralPath (Join-Path $project "media/$file") -Destination $media
+  }
   Copy-Item -LiteralPath (Join-Path $project 'LICENSE') -Destination $stage
   $archive = Join-Path $dist "$name.zip"
   Compress-Archive -LiteralPath $stage -DestinationPath $archive -Force
