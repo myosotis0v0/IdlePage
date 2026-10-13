@@ -47,19 +47,41 @@ export class ReadingLocation implements vscode.WebviewViewProvider, vscode.Dispo
   resolveWebviewView(view: vscode.WebviewView) {
     this.view = view;
     view.webview.options = { enableScripts: true, localResourceRoots: [] };
-    const nonce = randomBytes(16).toString('hex');
-    view.webview.html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'"><style nonce="${nonce}">
-      *{box-sizing:border-box}html,body{height:100%;margin:0}body{color:var(--vscode-foreground);font:13px var(--vscode-font-family);padding:6px 10px;display:flex;flex-direction:column;gap:5px}header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--vscode-descriptionForeground)}#progress{margin-left:auto}button{border:0;background:transparent;color:var(--vscode-textLink-foreground);cursor:pointer;padding:2px;font:inherit}button:hover{text-decoration:underline}main{overflow:auto;flex:1;min-height:0;font-size:14px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}#error{color:var(--vscode-editorWarning-foreground)}[hidden]{display:none!important}
-      </style></head><body><header><span id="count"></span><button data-command="previousSegment">上一段</button><button data-command="nextSegment">下一段</button><button data-command="nextChapter">下一章</button><button data-command="toggleReading">隐藏/恢复</button><span id="progress"></span></header><div id="error" hidden><span></span> <button data-command="showBrowser">显示浏览器检查</button> <button data-command="returnReading">返回阅读</button> <button data-command="retryReading">重试</button></div><main id="text">从书本菜单进入书架，选择章节开始阅读。</main><script nonce="${nonce}">
-      const api=acquireVsCodeApi();document.querySelectorAll('button').forEach(b=>b.onclick=()=>api.postMessage({command:b.dataset.command}));window.addEventListener('message',e=>{const s=e.data;document.getElementById('count').textContent=s.count;document.getElementById('progress').textContent=s.count?s.progress+'%':'';const error=document.getElementById('error');error.hidden=!s.error;error.querySelector('span').textContent=s.error||'';const text=document.getElementById('text');text.textContent=s.hidden?'阅读已隐藏':s.error?'':s.text?s.text.replace(/\u200b/g,''):'从书本菜单进入书架，选择章节开始阅读。';text.scrollTop=0;});api.postMessage({ready:true});
-      </script></body></html>`;
+    view.webview.html = readingLocationHtml();
     const allowed = new Set(['previousSegment', 'nextSegment', 'nextChapter', 'toggleReading', 'showBrowser', 'returnReading', 'retryReading']);
     this.subscriptions.push(view.webview.onDidReceiveMessage(message => {
       if (message?.ready) this.update();
-      else if (allowed.has(message?.command)) void vscode.commands.executeCommand('idlepage.' + message.command);
+      else if (allowed.has(message?.command)) {
+        const state = this.reader.state();
+        if (message.wheel && (!view.visible || this.location() === 'statusBar' || !state.count || state.hidden || state.error)) return;
+        void vscode.commands.executeCommand('idlepage.' + message.command);
+      }
     }), view.onDidDispose(() => { if (this.view === view) this.view = undefined; }));
     this.update();
   }
   private update() { if (this.view) void this.view.webview.postMessage(this.reader.state()); }
   dispose() { this.subscriptions.forEach(item => item.dispose()); }
+}
+
+export function readingLocationHtml() {
+    const nonce = randomBytes(16).toString('hex');
+    return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'"><style nonce="${nonce}">
+      *{box-sizing:border-box}html,body{height:100%;margin:0}body{color:var(--vscode-foreground);font:13px var(--vscode-font-family);padding:6px 10px;display:flex;flex-direction:column;gap:5px}header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--vscode-descriptionForeground)}#progress{margin-left:auto}button{border:0;background:transparent;color:var(--vscode-textLink-foreground);cursor:pointer;padding:2px;font:inherit}button:hover{text-decoration:underline}main{overflow:auto;flex:1;min-height:0;font-size:14px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}#error{color:var(--vscode-editorWarning-foreground)}[hidden]{display:none!important}
+      </style></head><body><header><span id="count"></span><button data-command="previousSegment">上一段</button><button data-command="nextSegment">下一段</button><button data-command="nextChapter">下一章</button><button data-command="toggleReading">隐藏/恢复</button><span id="progress"></span></header><div id="error" hidden><span></span> <button data-command="showBrowser">显示浏览器检查</button> <button data-command="returnReading">返回阅读</button> <button data-command="retryReading">重试</button></div><main id="text">从书本菜单进入书架，选择章节开始阅读。</main><script nonce="${nonce}">
+      const api=acquireVsCodeApi(),text=document.getElementById('text');let readable=false,lastWheel=-Infinity,lastTurn=-Infinity,burst=false;
+      document.querySelectorAll('button').forEach(b=>b.onclick=()=>api.postMessage({command:b.dataset.command}));
+      window.addEventListener('message',e=>{const s=e.data;readable=!!s.count&&!s.hidden&&!s.error;document.getElementById('count').textContent=s.count;document.getElementById('progress').textContent=s.count?s.progress+'%':'';const error=document.getElementById('error');error.hidden=!s.error;error.querySelector('span').textContent=s.error||'';const value=s.hidden?'阅读已隐藏':s.error?'':s.text?s.text.replace(/\u200b/g,''):'从书本菜单进入书架，选择章节开始阅读。';if(text.textContent!==value){text.textContent=value;text.scrollTop=0;}});
+      text.addEventListener('wheel',e=>{
+        const r=text.getBoundingClientRect();
+        if(!readable||e.ctrlKey||e.metaKey||e.altKey||e.shiftKey||!e.deltaY||Math.abs(e.deltaX)>Math.abs(e.deltaY)||e.clientX<r.left||e.clientX>=r.right||e.clientY<r.top||e.clientY>=r.bottom)return;
+        const now=performance.now();if(now-lastWheel>180)burst=false;lastWheel=now;
+        if(burst){e.preventDefault();return;}
+        const down=e.deltaY>0;
+        // Let the reader see overflow before permitting a turn at that edge.
+        if(down?text.scrollTop+text.clientHeight<text.scrollHeight-1:text.scrollTop>1){lastTurn=now;return;}
+        e.preventDefault();if(now-lastTurn<350)return;
+        burst=true;lastTurn=now;api.postMessage({command:down?'nextSegment':'previousSegment',wheel:true});
+      },{passive:false});
+      api.postMessage({ready:true});
+      </script></body></html>`;
 }
