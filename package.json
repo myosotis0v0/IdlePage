@@ -100,6 +100,10 @@
     },
     "commands": [
       {
+        "command": "idlepage.openKeybindings",
+        "title": "余页: 配置快捷键"
+      },
+      {
         "command": "idlepage.selectReadingLocation",
         "title": "余页: 文本显示位置"
       },
@@ -204,22 +208,22 @@
       {
         "command": "idlepage.previousSegment",
         "key": "alt+left",
-        "when": "idlepage.reading && !inputFocus"
+        "when": "idlepage.reading && !idlepage.readingHidden && !inputFocus"
       },
       {
         "command": "idlepage.nextSegment",
         "key": "alt+right",
-        "when": "idlepage.reading && !inputFocus"
+        "when": "idlepage.reading && !idlepage.readingHidden && !inputFocus"
       },
       {
         "command": "idlepage.nextChapter",
         "key": "alt+down",
-        "when": "idlepage.reading && !inputFocus"
+        "when": "idlepage.reading && !idlepage.readingHidden && !inputFocus"
       },
       {
         "command": "idlepage.toggleReading",
         "key": "alt+h",
-        "when": "idlepage.reading && !inputFocus"
+        "when": "idlepage.reading || idlepage.webviewReading"
       }
     ],
     "viewsContainers": {
@@ -242,7 +246,7 @@
           "id": "idlepage.reader",
           "name": "阅读",
           "type": "webview",
-          "when": "idlepage.webviewReading"
+          "when": "idlepage.webviewReading && !idlepage.readingHidden"
         }
       ],
       "idlepage-demo": [

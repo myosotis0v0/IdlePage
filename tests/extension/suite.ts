@@ -23,8 +23,15 @@ export async function run(): Promise<void> {
     reader.returnReading(); assert.equal(reader.state().error, undefined); assert.equal(reader.state().offset, offset);
     reader.toggle(); assert.equal(reader.state().hidden, true);
     reader.toggle(); assert.equal(reader.state().offset, offset);
+    reader.toggle(); reader.failure('后台失败'); assert.equal(reader.state().hidden, true);
+    reader.returnReading(false); reader.set('new-fixture', '后台章节', 3, 12);
+    assert.equal(reader.state().hidden, true, 'Background completion must not reveal hidden reading');
+    reader.toggle(); assert.equal(reader.state().hidden, false);
   } finally { reader.dispose(); }
   for (const command of menuCommands) assert.ok(commands.includes(command));
+  const keybindings = extension.packageJSON.contributes.keybindings;
+  assert.equal(keybindings.find((item: { command: string }) => item.command === 'idlepage.toggleReading').when.includes('inputFocus'), false);
+  assert.ok(commands.includes('idlepage.openKeybindings'));
   assert.equal(api.getEntryStatus().text, '$(book)'); assert.equal(api.getEntryStatus().hasClick, false);
   const hover = hoverMenu('[bad](command:evil)', true);
   assert.deepEqual(hover.isTrusted, { enabledCommands: menuCommands });
@@ -101,6 +108,13 @@ export async function run(): Promise<void> {
     await vscode.workspace.getConfiguration('idlepage').update('reading.location', location, vscode.ConfigurationTarget.Global);
     await new Promise(resolve => setTimeout(resolve, 300));
     assert.deepEqual(api.getReaderStatus(), beforeLocationSwitch, 'Changing display location must retain reading state');
+    await vscode.commands.executeCommand('idlepage.toggleReading');
+    const hidden = api.getReaderStatus(); assert.equal((hidden as { hidden?: boolean }).hidden, true);
+    await vscode.commands.executeCommand('idlepage.nextSegment');
+    await vscode.commands.executeCommand('idlepage.previousSegment');
+    assert.deepEqual(api.getReaderStatus(), hidden, 'Navigation cannot advance hidden reading');
+    await vscode.commands.executeCommand('idlepage.toggleReading');
+    assert.deepEqual(api.getReaderStatus(), beforeLocationSwitch, 'Restore retains chapter and offset in every location');
     assert.equal((await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task, null);
   }
   assert.equal((await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task, null);

@@ -14,6 +14,7 @@ export class ReadingLocation implements vscode.WebviewViewProvider, vscode.Dispo
   private view?: vscode.WebviewView;
   private subscriptions: vscode.Disposable[] = [];
   private applying = Promise.resolve();
+  private wasHidden = false;
   constructor(private reader: StatusReader) {
     this.subscriptions.push(
       vscode.window.registerWebviewViewProvider('idlepage.reader', this, { webviewOptions: { retainContextWhenHidden: true } }),
@@ -35,7 +36,7 @@ export class ReadingLocation implements vscode.WebviewViewProvider, vscode.Dispo
       const location = this.location();
       await vscode.commands.executeCommand('setContext', 'idlepage.webviewReading', location !== 'statusBar');
       this.reader.render();
-      if (location === 'statusBar') return;
+      if (location === 'statusBar' || this.reader.state().hidden) return;
       const destinationId = location === 'panel' ? 'workbench.view.extension.idlepage-reader' : vscode.extensions.getExtension('openai.chatgpt') ? 'workbench.view.extension.codexSecondaryViewContainer' : 'workbench.view.explorer';
       if (location === 'sidebar' && vscode.extensions.getExtension('openai.chatgpt')) await vscode.commands.executeCommand('chatgpt.sidebarSecondaryView.focus');
       await vscode.commands.executeCommand('vscode.moveViews', { viewIds: ['idlepage.reader'], destinationId });
@@ -59,7 +60,12 @@ export class ReadingLocation implements vscode.WebviewViewProvider, vscode.Dispo
     }), view.onDidDispose(() => { if (this.view === view) this.view = undefined; }));
     this.update();
   }
-  private update() { if (this.view) void this.view.webview.postMessage(this.reader.state()); }
+  private update() {
+    const state = this.reader.state(), restoring = this.wasHidden && !state.hidden;
+    this.wasHidden = state.hidden;
+    if (this.view) void this.view.webview.postMessage(state);
+    if (restoring && this.location() !== 'statusBar') void this.apply();
+  }
   dispose() { this.subscriptions.forEach(item => item.dispose()); }
 }
 

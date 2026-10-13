@@ -125,7 +125,7 @@ export async function activate(context: vscode.ExtensionContext) {
     const reading = probe.readingContext();
     if (!diagnosticPreviews && reading && reading.revision !== readingRevision) {
       readingRevision = reading.revision; const body = probe.getReadingChapter()!;
-      reader.returnReading(); reader.set(String(reading.revision), body.text, reading.index + 1, reading.catalog.chapters.length);
+      reader.returnReading(false); reader.set(String(reading.revision), body.text, reading.index + 1, reading.catalog.chapters.length);
       void vscode.commands.executeCommand('setContext', 'idlepage.reading', true);
     }
     if (!diagnosticPreviews && !refreshing && !shuttingDown) prefetch?.sync();
@@ -302,8 +302,8 @@ export async function activate(context: vscode.ExtensionContext) {
       selectionEpoch++; prefetch?.pause(); probe.setReadingMode(false); diagnosticPreviews = true; return fn();
     });
     context.subscriptions.push(
-      vscode.commands.registerCommand('idlepage.nextSegment', () => { if (!reader.state().error && !reader.next()) return vscode.commands.executeCommand('idlepage.nextChapter'); }),
-      vscode.commands.registerCommand('idlepage.previousSegment', () => { if (!reader.state().error) reader.previous(); }),
+      vscode.commands.registerCommand('idlepage.nextSegment', () => { if (!reader.state().hidden && !reader.state().error && !reader.next()) return vscode.commands.executeCommand('idlepage.nextChapter'); }),
+      vscode.commands.registerCommand('idlepage.previousSegment', () => { if (!reader.state().hidden && !reader.state().error) reader.previous(); }),
       vscode.commands.registerCommand('idlepage.toggleReading', () => reader.toggle()),
       vscode.commands.registerCommand('idlepage.returnReading', async () => {
         reader.returnReading();
@@ -322,6 +322,7 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('idlepage.refreshBookshelf', () => { if (refreshBookshelf()) navigation!.openShelf(); }),
       vscode.commands.registerCommand('idlepage.refreshAll', refreshAll),
       vscode.commands.registerCommand('idlepage.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:myosotis0v0.idle-page')),
+      vscode.commands.registerCommand('idlepage.openKeybindings', () => vscode.commands.executeCommand('workbench.action.openGlobalKeybindings', '@ext:myosotis0v0.idle-page')),
       vscode.commands.registerCommand('idlepage.cancelTask', () => { selectionEpoch++; const wasPrefetch = probe.isPrefetching(); prefetch?.pause(); const cancelled = probe.cancel() || wasPrefetch; update(); if (diagnosticPreviews && probe.getReadingChapter()) showChapter(); return cancelled || refreshing; }),
       vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('idlepage.reading.widthPercent') || event.affectsConfiguration('window.zoomLevel')) reader.render();

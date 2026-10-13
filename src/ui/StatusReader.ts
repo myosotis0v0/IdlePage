@@ -23,13 +23,14 @@ export class StatusReader implements vscode.Disposable {
   set(identity: string, text: string, current: number, total: number) {
     this.count = `${current}/${total}`; this.layout.set(identity, text); this.geometry.start(); this.render();
   }
-  failure(message: string) { this.error = message; this.hidden = false; this.render(); }
-  returnReading() { this.error = undefined; this.hidden = false; this.render(); }
+  failure(message: string) { this.error = message; this.render(); }
+  returnReading(reveal = true) { this.error = undefined; if (reveal) this.hidden = false; this.render(); }
   toggle() { this.hidden = !this.hidden; this.render(); }
   next() { const moved = this.layout.next(); this.render(); return moved; }
   previous() { this.layout.previous(); this.render(); }
   state() { return { ...this.layout.view(), count: this.count, error: this.error, hidden: this.hidden }; }
   render() {
+    void vscode.commands.executeCommand('setContext', 'idlepage.readingHidden', this.hidden);
     const percentage = vscode.workspace.getConfiguration('idlepage').get<number>('reading.widthPercent', 60);
     const zoom = vscode.workspace.getConfiguration('window').get<number>('zoomLevel', 0);
     const logicalWidth = this.width / Math.pow(1.2, zoom);
@@ -47,8 +48,8 @@ export class StatusReader implements vscode.Disposable {
     if (this.error) { tooltip.appendText(this.error); tooltip.appendMarkdown('\n\n'); }
     tooltip.appendMarkdown(this.error
       ? '[显示浏览器检查](command:idlepage.showBrowser) · [返回阅读](command:idlepage.returnReading) · [重试](command:idlepage.retryReading)'
-      : '[上一段](command:idlepage.previousSegment) · [下一段](command:idlepage.nextSegment) · [下一章](command:idlepage.nextChapter) · [隐藏阅读](command:idlepage.toggleReading)\n\nAlt+→ / Alt+← 翻段，Alt+↓ 下一章，Alt+H 隐藏/恢复');
-    tooltip.isTrusted = { enabledCommands: ['idlepage.showBrowser', 'idlepage.returnReading', 'idlepage.retryReading', 'idlepage.previousSegment', 'idlepage.nextSegment', 'idlepage.nextChapter', 'idlepage.toggleReading'] };
+      : '[上一段](command:idlepage.previousSegment) · [下一段](command:idlepage.nextSegment) · [下一章](command:idlepage.nextChapter) · [隐藏阅读](command:idlepage.toggleReading)\n\n[配置快捷键](command:idlepage.openKeybindings)');
+    tooltip.isTrusted = { enabledCommands: ['idlepage.showBrowser', 'idlepage.returnReading', 'idlepage.retryReading', 'idlepage.previousSegment', 'idlepage.nextSegment', 'idlepage.nextChapter', 'idlepage.toggleReading', 'idlepage.openKeybindings'] };
     const chunks = this.error ? [this.error] : splitStatusText(view.text || ' ', perItemCells);
     // Partition by the same measured units used for pagination, never truncate.
     while (this.bodies.length < chunks.length) this.bodies.push(vscode.window.createStatusBarItem('idlepage.readingText' + this.bodies.length, vscode.StatusBarAlignment.Left, -2 - this.bodies.length));
