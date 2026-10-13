@@ -76,7 +76,7 @@ async function poll() {
     if (!task) {
       const { managedTabs } = await chrome.storage.local.get('managedTabs');
       if (managedTabs?.previous) await settleTabs(managedTabs.current.id,
-        ['chapter-unavailable', 'cancelled', 'task-failed'].includes(state.phase) && state.failure?.reason !== 'access-blocked' && !['needs-login', 'access-blocked'].includes(state.chapterSummary?.reason));
+        !managedTabs.current.purpose && ['chapter-unavailable', 'cancelled', 'task-failed'].includes(state.phase) && state.failure?.reason !== 'access-blocked' && !['needs-login', 'access-blocked'].includes(state.chapterSummary?.reason));
       await chrome.storage.local.set({ activeTask: null }); return;
     }
     const safeCatalog = task.kind === 'catalog' && /^\d{1,20}$/.test(task.bookId ?? '') && task.url === `https://www.qidian.com/book/${task.bookId}/#Catalog`;
@@ -85,15 +85,15 @@ async function poll() {
     if ((!safeCatalog && !safeChapter && !['https://www.qidian.com/', 'https://my.qidian.com/bookcase/'].includes(task.url)) || typeof task.id !== 'string') return;
     const { activeTask, managedTabs } = await chrome.storage.local.get(['activeTask', 'managedTabs']);
     if (epoch !== navigationEpoch) return;
-    if (activeTask?.id === task.id && activeTask.protocolVersion === 7) {
+    if (activeTask?.id === task.id && activeTask.protocolVersion === 8) {
       try { await chrome.tabs.get(activeTask.tabId); return; }
       catch { if (state.report?.state === 'AccessBlocked') return; }
     }
     await retireOwned(managedTabs?.previous);
     const tab = await chrome.tabs.create({ url: task.url, active: task.kind === 'login' });
     if (epoch !== navigationEpoch) { await chrome.tabs.remove(tab.id); return; }
-    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 7, attentionShown: task.kind === 'login' },
-      managedTabs: { current: { id: tab.id, url: task.url, kind: task.kind }, previous: managedTabs?.current ?? null },
+    await chrome.storage.local.set({ activeTask: { ...task, tabId: tab.id, protocolVersion: 8, attentionShown: task.kind === 'login' },
+      managedTabs: { current: { id: tab.id, url: task.url, kind: task.kind, purpose: task.purpose }, previous: managedTabs?.current ?? null },
       taskTabSummary: { count: managedTabs?.current ? 2 : 1 } });
   } catch (error) {
     const code = /^BridgeStatus\d{3}$/.test(error?.message ?? '') ? error.message :
@@ -109,9 +109,9 @@ async function handleObservation(message, sender) {
     if (activeTask.kind !== 'chapter' || url.origin !== target.origin || url.pathname.replace(/\/$/, '') !== target.pathname.replace(/\/$/, '')) return { ignored: true };
     const reply = await request(message.type === 'idlepage-chapter' ? '/v1/chapter/result' : '/v1/chapter/diagnostics', { method: 'POST', body: JSON.stringify({ taskId: activeTask.id, report: message.batch }) });
     await chrome.storage.local.set({ phase: reply.phase, chapterSummary: reply.chapterSummary ?? null });
-    if (reply.phase === 'chapter-preview-ready') await settleTabs(activeTask.tabId);
-    if (reply.phase === 'chapter-unavailable') await settleTabs(activeTask.tabId, !['needs-login', 'access-blocked'].includes(message.batch?.reason));
-    if (['chapter-preview-ready', 'chapter-unavailable', 'waiting-login'].includes(reply.phase)) await poll();
+    if (['chapter-preview-ready', 'prefetch-ready', 'prefetch-failed'].includes(reply.phase)) await settleTabs(activeTask.tabId);
+    if (reply.phase === 'chapter-unavailable') await settleTabs(activeTask.tabId, !activeTask.purpose && !['needs-login', 'access-blocked'].includes(message.batch?.reason));
+    if (['chapter-preview-ready', 'chapter-unavailable', 'waiting-login', 'prefetch-ready', 'prefetch-failed'].includes(reply.phase)) await poll();
     return { accepted: true };
   }
   if (message.type === 'idlepage-catalog') {
@@ -137,7 +137,7 @@ async function handleObservation(message, sender) {
   });
   await chrome.storage.local.set({ connection: 'connected', phase: reply.phase, report: reply.report });
   const state = reply.report?.state;
-  if (reply.phase === 'chapter-unavailable') await settleTabs(activeTask.tabId);
+  if (['chapter-unavailable', 'prefetch-failed'].includes(reply.phase)) await settleTabs(activeTask.tabId);
   if (state === 'SiteContentVisible' && ['access', 'bookshelf'].includes(activeTask.kind)) await settleTabs(activeTask.tabId);
   if (activeTask.kind === 'login' && reply.recovery?.waitingLogin && !activeTask.attentionShown) {
     await chrome.tabs.update(activeTask.tabId, { active: true });
@@ -164,7 +164,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'idlepage-bridge') void poll(); });
 async function initialize() {
-  await chrome.storage.local.set({ workerVersion: 10 });
+  await chrome.storage.local.set({ workerVersion: 11 });
   await chrome.alarms.create('idlepage-bridge', { periodInMinutes: 0.5 });
   await poll();
 }

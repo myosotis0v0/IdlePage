@@ -15,6 +15,7 @@ export interface BrowserTask {
   kind: 'access' | 'bookshelf' | 'bookshelf-list' | 'catalog' | 'chapter' | 'login';
   url: string;
   bookId?: string;
+  purpose?: 'prefetch' | 'reading';
 }
 export interface AccessReport extends Observation {
   observedAt: string;

@@ -1,3 +1,5 @@
+import { StatusReader } from '../ui/StatusReader';
+import { ReadingPrefetch } from '../application/ReadingPrefetch';
 import * as vscode from 'vscode';
 import { chapterPreview, chapterFailureMessage } from '../ui/chapterPreview';
 import { catalogPreview } from '../ui/catalogPreview';
@@ -21,6 +23,10 @@ let bridge: LocalBridgeServer | undefined;
 let stopBrowser: (() => Promise<void>) | undefined;
 export async function activate(context: vscode.ExtensionContext) {
   const output = vscode.window.createOutputChannel('IdlePage');
+  const reader = new StatusReader(); context.subscriptions.push(reader);
+  let prefetch: ReadingPrefetch | undefined;
+  let readingRevision = -1;
+  let readingFailure: 'prefetch' | 'foreground' = 'prefetch';
   const status = vscode.window.createStatusBarItem('idlepage.connection', vscode.StatusBarAlignment.Left, 0);
   status.name = '余页'; status.accessibilityInformation = { label: '余页，悬停打开功能菜单' };
   status.text = '$(book)'; status.tooltip = hoverMenu('正在启动', false); status.show();
@@ -40,7 +46,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let shuttingDown = false;
   let cacheWarning = false;
   let lastFailure = 0;
-  const warnCache = () => { if (!cacheWarning) { cacheWarning = true; output.appendLine('本地缓存读写失败，继续在线读取。'); } };
+  const warnCache = () => { if (!cacheWarning) { cacheWarning = true; output.appendLine('本地缓存读写失败，继续在线读取。'); reader.failure('缓存读写失败或空间不足'); } };
   let lifetime = new EdgeLifetime(storage);
   const browserWindows = new BrowserWindowController(new EdgeWindowControl());
   let manageVisibility = false;
@@ -99,8 +105,15 @@ export async function activate(context: vscode.ExtensionContext) {
       const shelf = probe.getBookshelf(), catalog = probe.getCatalog(), chapter = probe.cacheChapter();
       if (shelf) void cache.saveShelf(shelf).catch(warnCache);
       if (catalog && catalog.chapters.length === catalog.total) void cache.saveCatalog(catalog).catch(warnCache);
-      if (chapter) void cache.saveChapter(chapter).catch(warnCache);
+      if (chapter) void cache.saveChapter(chapter).then(saved => { if (!saved) warnCache(); }).catch(warnCache);
     }
+    const reading = probe.readingContext();
+    if (!diagnosticPreviews && reading && reading.revision !== readingRevision) {
+      readingRevision = reading.revision; const body = probe.getReadingChapter()!;
+      reader.returnReading(); reader.set(String(reading.revision), body.text, reading.index + 1, reading.catalog.chapters.length);
+      void vscode.commands.executeCommand('setContext', 'idlepage.reading', true);
+    }
+    if (!diagnosticPreviews && !refreshing && !shuttingDown) prefetch?.sync();
     const pending = probe.pendingCacheChapter();
     if (pending && checkingTask !== pending.taskId) {
       checkingTask = pending.taskId;
@@ -136,12 +149,16 @@ export async function activate(context: vscode.ExtensionContext) {
       if (snapshot.phase !== 'chapter-unavailable') {
         const message = snapshot.failure.reason === 'cancelled' ? '已取消当前任务。' : chapterFailureMessage[snapshot.failure.reason];
         if (snapshot.failure.reason === 'cancelled') void vscode.window.showInformationMessage(message);
-        else void vscode.window.showWarningMessage(message);
+        else if (diagnosticPreviews) void vscode.window.showWarningMessage(message);
+        else if (snapshot.phase !== 'prefetch-failed') { readingFailure = 'foreground'; reader.failure(message); }
       }
     }
     if (['chapter-preview-ready', 'chapter-unavailable'].includes(snapshot.phase) && !chapterShown) {
-      chapterShown = true; showChapter(); const result = probe.getChapter();
-      if (result?.status === 'unavailable') void vscode.window.showWarningMessage(chapterFailureMessage[result.reason]);
+      chapterShown = true; if (diagnosticPreviews) showChapter(); const result = probe.getChapter();
+      if (result?.status === 'unavailable') {
+        if (diagnosticPreviews) void vscode.window.showWarningMessage(chapterFailureMessage[result.reason]);
+        else { readingFailure = 'foreground'; prefetch?.pause(); reader.failure(chapterFailureMessage[result.reason]); }
+      }
     }
     if (diagnosticPreviews && snapshot.bookshelfSummary && !bookshelfShown && !/catalog|chapter/.test(snapshot.phase)) { bookshelfShown = true; showBookshelf(); }
     status.text = '$(book)';
@@ -177,6 +194,12 @@ export async function activate(context: vscode.ExtensionContext) {
         probe.restoreMetadata(shelf, catalog?.catalog); cache = candidate;
       } catch { warnCache(); }
     }
+    prefetch = new ReadingPrefetch(probe, cache, update, () => ensureBrowser(), reason => {
+      readingFailure = 'prefetch';
+      const messages: Record<string, string> = { 'cache-disabled': '预取暂停：缓存未启用', 'cache-capacity': '预取暂停：缓存空间不足', 'cache-error': '预取暂停：缓存读写失败', 'needs-login': '预取暂停：需要登录', 'locked': '预取暂停：章节不可获取', 'access-blocked': '预取暂停：访问受阻', 'timeout': '预取暂停：读取超时', 'connection-failed': '预取暂停：浏览器未连接' };
+      reader.failure(messages[reason] ?? '预取暂停：章节获取失败');
+    });
+    context.subscriptions.push({ dispose: () => prefetch?.dispose() });
     // Do not overwrite a running window's paired copy when binding fails.
     const companion = await prepareCompanion(context.extensionPath, storage, bridge.endpoint(), token);
     browserSession = new BrowserSession({ isRunning: async () => {
@@ -188,7 +211,7 @@ export async function activate(context: vscode.ExtensionContext) {
       void visibility.requestHide();
     }, isCurrent: id => probe.isCurrentTask(id), hasObserved: id => probe.hasObservedTask(id), onChanged: update });
     context.subscriptions.push({ dispose: () => browserSession?.dispose() });
-    stopBrowser = async () => { shuttingDown = true; selectionEpoch++; visibility.dispose(); browserSession?.dispose(); try { await cache?.flush(); } finally { await lifetime.stop(); } };
+    stopBrowser = async () => { shuttingDown = true; selectionEpoch++; prefetch?.dispose(); visibility.dispose(); browserSession?.dispose(); try { await cache?.flush(); } finally { await lifetime.stop(); } };
     ensureBrowser = (force = false) => {
       const id = probe.currentTaskId();
       if (!id || probe.pendingCacheChapter() || refreshing || shuttingDown) return;
@@ -204,19 +227,19 @@ export async function activate(context: vscode.ExtensionContext) {
     };
     const refreshBookshelf = () => {
       if (refreshing || shuttingDown) return false;
-      selectionEpoch++; diagnosticPreviews = false; probe.startBookshelfExtraction(); update(); ensureBrowser(); return true;
+      selectionEpoch++; prefetch?.pause(); diagnosticPreviews = false; probe.startBookshelfExtraction(); update(); ensureBrowser(); return true;
     };
     navigation = new Navigation(probe, {
       shelf: refreshBookshelf,
       book: async (id, refresh) => {
         if (refreshing) return;
-        const epoch = ++selectionEpoch; diagnosticPreviews = false; probe.invalidateTask();
+        const epoch = ++selectionEpoch; prefetch?.pause(); diagnosticPreviews = false; probe.invalidateTask();
         const cached = !refresh ? await cache?.catalog(id).catch(() => { warnCache(); return undefined; }) : undefined;
         if (epoch !== selectionEpoch || shuttingDown || refreshing) return;
         if (probe.selectBook(id, cached?.catalog)) { update(); ensureBrowser(); }
       },
       chapter: (book, chapter) => {
-        if (refreshing) return; selectionEpoch++; diagnosticPreviews = false;
+        if (refreshing) return; selectionEpoch++; prefetch?.pause(); probe.setReadingMode(true); diagnosticPreviews = false;
         if (probe.selectChapter(book, chapter)) { chapterShown = false; update(); ensureBrowser(); }
       },
     });
@@ -247,7 +270,7 @@ export async function activate(context: vscode.ExtensionContext) {
     };
     const refreshAll = async () => {
       if (refreshing || shuttingDown) return false;
-      const epoch = ++selectionEpoch; refreshing = true; diagnosticPreviews = false; probe.invalidateTask(); update();
+      const epoch = ++selectionEpoch; prefetch?.pause(); refreshing = true; diagnosticPreviews = false; probe.invalidateTask(); update();
       try {
         await lifetime.start();
         try { await lifetime.stop(); } finally { if (!shuttingDown) lifetime = new EdgeLifetime(storage); }
@@ -261,15 +284,32 @@ export async function activate(context: vscode.ExtensionContext) {
     };
     const action = (name: string, fn: () => unknown) => vscode.commands.registerCommand(name, () => {
       if (refreshing || shuttingDown) return 'busy';
-      selectionEpoch++; diagnosticPreviews = true; return fn();
+      selectionEpoch++; prefetch?.pause(); probe.setReadingMode(false); diagnosticPreviews = true; return fn();
     });
     context.subscriptions.push(
+      vscode.commands.registerCommand('idlepage.nextSegment', () => { if (!reader.state().error && !reader.next()) return vscode.commands.executeCommand('idlepage.nextChapter'); }),
+      vscode.commands.registerCommand('idlepage.previousSegment', () => { if (!reader.state().error) reader.previous(); }),
+      vscode.commands.registerCommand('idlepage.toggleReading', () => reader.toggle()),
+      vscode.commands.registerCommand('idlepage.returnReading', async () => {
+        reader.returnReading();
+        if (browserWindows.mode === 'diagnostic') {
+          try { const result = await browserWindows.hide(); if (result.status !== 'ok') reader.failure('浏览器未能隐藏'); }
+          catch { reader.failure('浏览器未能隐藏'); }
+        }
+      }),
+      vscode.commands.registerCommand('idlepage.retryReading', () => {
+        if (refreshing || shuttingDown) return;
+        reader.returnReading();
+        if (readingFailure === 'prefetch') prefetch?.retry();
+        else { prefetch?.pause(); chapterShown = false; if (probe.retryReadingChapter()) { update(); ensureBrowser(); } }
+      }),
       vscode.commands.registerCommand('idlepage.openBookshelf', () => { if (!refreshing) navigation!.openShelf(); }),
       vscode.commands.registerCommand('idlepage.refreshBookshelf', () => { if (refreshBookshelf()) navigation!.openShelf(); }),
       vscode.commands.registerCommand('idlepage.refreshAll', refreshAll),
       vscode.commands.registerCommand('idlepage.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:myosotis0v0.idle-page')),
-      vscode.commands.registerCommand('idlepage.cancelTask', () => { selectionEpoch++; const cancelled = probe.cancel(); update(); if (probe.getReadingChapter()) showChapter(); return cancelled || refreshing; }),
+      vscode.commands.registerCommand('idlepage.cancelTask', () => { selectionEpoch++; const wasPrefetch = probe.isPrefetching(); prefetch?.pause(); const cancelled = probe.cancel() || wasPrefetch; update(); if (diagnosticPreviews && probe.getReadingChapter()) showChapter(); return cancelled || refreshing; }),
       vscode.workspace.onDidChangeConfiguration(event => {
+        if (event.affectsConfiguration('idlepage.reading.widthPercent') || event.affectsConfiguration('window.zoomLevel')) reader.render();
         if (cache && event.affectsConfiguration('idlepage.cache.maxSizeMB')) void cache.setLimit(vscode.workspace.getConfiguration('idlepage').get<number>('cache.maxSizeMB', 200) * 1024 * 1024).catch(warnCache);
       }),
       vscode.commands.registerCommand('idlepage.showBrowser', () => controlBrowserWindow('show')),
@@ -293,18 +333,20 @@ export async function activate(context: vscode.ExtensionContext) {
       action('idlepage.extractChapter', () => { chapterShown = false; probe.startChapterExtraction(); update(); ensureBrowser(); }),
       vscode.commands.registerCommand('idlepage.showChapter', showChapter),
       vscode.commands.registerCommand('idlepage.nextChapter', () => {
-        if (refreshing || shuttingDown) return 'busy'; selectionEpoch++;
+        if (refreshing || shuttingDown) return 'busy'; selectionEpoch++; prefetch?.pause();
+        probe.setReadingMode(!diagnosticPreviews);
         const result = probe.startNextChapter();
         if (result !== 'started') {
           void vscode.window.showInformationMessage({ busy: '正在获取章节，请稍候。', 'not-ready': '请先获取当前章正文。', end: '本次目录没有下一章。' }[result]); return result;
         }
-        chapterShown = false; showChapter(); update(); ensureBrowser(); return result;
+        chapterShown = false; if (diagnosticPreviews) showChapter(); update(); ensureBrowser(); return result;
       }),
     );
     const expiryTimer = setInterval(() => { if (probe.expireChapter()) update(); }, 1000);
     context.subscriptions.push({ dispose: () => clearInterval(expiryTimer) });
     return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory,
       getBrowserWindowMode: () => browserWindows.mode, getCacheStatus: () => cache?.summary(),
+      getReaderStatus: () => ({ ...reader.state(), text: undefined }),
       getEntryStatus: () => ({ text: status.text, hasClick: !!status.command, tooltip: (status.tooltip as vscode.MarkdownString)?.value }) };
   } catch (error) {
     await bridge?.close(); bridge = undefined;

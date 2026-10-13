@@ -8,6 +8,25 @@ import { parseObservation, type AccessReport, type BrowserTask } from '../domain
 export class QidianAccessProbe {
   constructor(private readonly useCache = false) {}
   private revision = 0;
+  private readingRevision = 0;
+  private background = false;
+  private readingMode = false;
+  setReadingMode(enabled: boolean) { this.readingMode = enabled; }
+  retryReadingChapter(): boolean {
+    if (!this.taskCatalog?.chapters[this.pendingChapterIndex]) return false;
+    this.cancelPrefetch(); this.resetRecovery(); this.background = false;
+    this.beginChapter(this.pendingChapterIndex, this.taskCatalog); return true;
+  }
+  private taskCatalog?: CatalogResult;
+  private prefetchResult?: { chapter?: CachedChapter; reason?: string };
+  isPrefetching() { return this.background; }
+  readingContext() { return this.readingChapter && this.readingCatalog ? { revision: this.readingRevision, catalog: this.readingCatalog, index: this.currentChapterIndex } : undefined; }
+  takePrefetchResult() { const result = this.prefetchResult; this.prefetchResult = undefined; return result; }
+  cancelPrefetch() { if (this.background) this.invalidateTask(); this.prefetchResult = undefined; }
+  startPrefetch(index: number): boolean {
+    if (this.task || !this.readingCatalog || index <= this.currentChapterIndex || index > this.currentChapterIndex + 3 || !this.readingCatalog.chapters[index]) return false;
+    this.resetRecovery(); this.background = true; this.beginChapter(index, this.readingCatalog); return true;
+  }
   private cacheTask?: string;
   private chapterSource: 'online' | 'cache' = 'online';
   private suspended?: BrowserTask;
@@ -17,6 +36,7 @@ export class QidianAccessProbe {
   private failureSequence = 0;
   private resetRecovery() { this.suspended = undefined; this.recovered = false; this.failure = undefined; this.taskStarted = Date.now(); }
   private waitForLogin() {
+    if (this.background || this.readingMode && this.task?.kind === 'chapter') { this.finishChapter({ status: 'unavailable', reason: 'needs-login' }); return; }
     if (this.task?.kind === 'login') return;
     if (this.recovered) { this.stop('login-failed'); return; }
     this.suspended = this.task ?? undefined;
@@ -44,6 +64,7 @@ export class QidianAccessProbe {
   }
   cacheRevision() { return this.revision; }
   invalidateTask(): void {
+    this.background = false; this.prefetchResult = undefined;
     this.task = null; this.suspended = undefined; this.failure = undefined; this.report = undefined;
     this.chapterDeadline = 0; this.chapterText = ''; this.cacheTask = undefined; this.chapter = undefined;
     this.chapterGoal = false; this.phase = 'idle';
@@ -71,8 +92,8 @@ export class QidianAccessProbe {
     if (catalog?.bookId === shelf?.books[0]?.id) this.catalog = catalog;
   }
   pendingCacheChapter() {
-    if (!this.cacheTask || this.cacheTask !== this.task?.id || !this.catalog) return;
-    return { taskId: this.cacheTask, bookId: this.catalog.bookId, ...this.catalog.chapters[this.pendingChapterIndex] };
+    if (!this.cacheTask || this.cacheTask !== this.task?.id || !this.taskCatalog) return;
+    return { taskId: this.cacheTask, bookId: this.taskCatalog.bookId, ...this.taskCatalog.chapters[this.pendingChapterIndex] };
   }
   resolveCachedChapter(taskId: string, cached?: CachedChapter): boolean {
     const pending = this.pendingCacheChapter();
@@ -186,6 +207,7 @@ export class QidianAccessProbe {
     else this.startCatalogExtraction(true);
   }
   startNextChapter(): 'started' | 'busy' | 'not-ready' | 'end' {
+    this.cancelPrefetch();
     if (this.task) return 'busy';
     if (!this.readingChapter || this.currentChapterIndex < 0 || !this.readingCatalog) return 'not-ready';
     this.catalog = this.readingCatalog;
@@ -195,20 +217,28 @@ export class QidianAccessProbe {
     this.chapter = undefined; this.beginChapter(next); return 'started';
   }
   getReadingChapter() { return this.readingChapter ? structuredClone(this.readingChapter) : undefined; }
-  private beginChapter(index = 0): void {
+  private beginChapter(index = 0, catalog = this.catalog!): void {
+    this.taskCatalog = catalog;
     this.taskStarted = Date.now();
     this.pendingChapterIndex = index;
     this.chapterDiagnostics = undefined;
-    const chapter = this.catalog!.chapters[index];
+    const chapter = catalog.chapters[index];
     this.chapterTitle = chapter.title; this.chapterText = ''; this.chapterTotal = 0;
     this.chapterDeadline = Date.now() + 90000;
-    this.task = { id: randomUUID(), kind: 'chapter', bookId: this.catalog!.bookId, url: chapter.url };
+    this.task = { id: randomUUID(), kind: 'chapter', bookId: catalog.bookId, url: chapter.url,
+      ...(this.background ? { purpose: 'prefetch' as const } : this.readingMode ? { purpose: 'reading' as const } : {}) };
     this.report = undefined; this.phase = 'waiting-chapter';
     this.cacheTask = this.useCache ? this.task.id : undefined;
     if (this.cacheTask) { this.phase = 'checking-cache'; this.chapterDeadline = 0; }
   }
   private finishChapter(result: ChapterResult, source: 'online' | 'cache' = 'online'): void {
-    if (result.status === 'available') { this.chapterSource = source; this.readingChapter = result; this.readingCatalog = this.catalog; this.currentChapterIndex = this.pendingChapterIndex; this.revision++; }
+    if (this.background) {
+      const target = this.taskCatalog!.chapters[this.pendingChapterIndex];
+      this.prefetchResult = result.status === 'available' ? { chapter: { bookId: this.taskCatalog!.bookId, chapterId: target.id, url: target.url, title: target.title, text: result.text } } : { reason: result.reason };
+      this.background = false; this.task = null; this.chapterText = ''; this.chapterDeadline = 0; this.cacheTask = undefined;
+      this.phase = result.status === 'available' ? 'prefetch-ready' : 'prefetch-failed'; return;
+    }
+    if (result.status === 'available') { this.readingRevision++; this.chapterSource = source; this.readingChapter = result; this.readingCatalog = this.taskCatalog; this.currentChapterIndex = this.pendingChapterIndex; this.revision++; }
     this.chapter = result; this.task = null; this.chapterGoal = false; this.chapterText = ''; this.chapterDeadline = 0;
     this.phase = result.status === 'available' ? 'chapter-preview-ready' : 'chapter-unavailable';
   }
@@ -272,8 +302,8 @@ export class QidianAccessProbe {
   getCatalog(): CatalogResult | undefined { return this.catalog ? structuredClone(this.catalog) : undefined; }
   getBookshelf(): BookshelfPage | undefined { return this.bookshelf ? structuredClone(this.bookshelf) : undefined; }
   snapshot() {
-    return { phase: this.phase, bookSelectionRevision: this.bookSelectionRevision, recovery: { waitingLogin: !!this.suspended, resumed: this.recovered }, failure: this.failure, chapterSource: this.chapterSource, lastSeenAt: this.lastSeenAt, report: this.report ? { ...this.report } : undefined,
-      chapterNavigation: { current: this.currentChapterIndex + 1, total: (this.readingCatalog ?? this.catalog)?.chapters.length ?? 0, busy: !!this.task, canNext: !this.task && !!this.readingChapter && this.currentChapterIndex + 1 < (this.readingCatalog?.chapters.length ?? 0) },
+    return { phase: this.phase, background: this.background, bookSelectionRevision: this.bookSelectionRevision, recovery: { waitingLogin: !!this.suspended, resumed: this.recovered }, failure: this.failure, chapterSource: this.chapterSource, lastSeenAt: this.lastSeenAt, report: this.report ? { ...this.report } : undefined,
+      chapterNavigation: { current: this.currentChapterIndex + 1, total: (this.readingCatalog ?? this.catalog)?.chapters.length ?? 0, busy: !!this.task && !this.background, canNext: (!this.task || this.background) && !!this.readingChapter && this.currentChapterIndex + 1 < (this.readingCatalog?.chapters.length ?? 0) },
       chapterSummary: this.chapter ? this.chapter.status === 'available' ? { status: 'available', characters: this.chapter.text.length } : { ...this.chapter } : undefined,
       chapterDiagnostics: this.chapterDiagnostics,
       catalogSummary: this.catalog ? { count: this.catalog.chapters.length, total: this.catalog.total, declaredCount: this.catalog.declaredCount, truncated: this.catalog.truncated, strategy: this.catalog.strategy, free: this.catalog.chapters.filter(c => c.payment === 'free').length, paid: this.catalog.chapters.filter(c => c.payment === 'paid').length, unknown: this.catalog.chapters.filter(c => c.payment === 'unknown').length } : undefined,

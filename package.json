@@ -79,6 +79,13 @@
           "maximum": 4096,
           "scope": "machine",
           "description": "本地阅读缓存容量（MiB），包含索引；超额时优先淘汰最久未使用的正文。"
+        },
+        "idlepage.reading.widthPercent": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 80,
+          "description": "正文区目标占 VS Code 窗口总宽度的百分比，根据窗口宽度和缩放估算，并非精确布局宽度。"
         }
       },
       "title": "IdlePage"
@@ -151,6 +158,48 @@
       {
         "command": "idlepage.openSettings",
         "title": "余页: 设置"
+      },
+      {
+        "command": "idlepage.previousSegment",
+        "title": "余页: 上一段"
+      },
+      {
+        "command": "idlepage.nextSegment",
+        "title": "余页: 下一段"
+      },
+      {
+        "command": "idlepage.toggleReading",
+        "title": "余页: 隐藏/恢复阅读"
+      },
+      {
+        "command": "idlepage.returnReading",
+        "title": "余页: 返回阅读"
+      },
+      {
+        "command": "idlepage.retryReading",
+        "title": "余页: 重试阅读或预取"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "idlepage.previousSegment",
+        "key": "alt+left",
+        "when": "idlepage.reading && !inputFocus"
+      },
+      {
+        "command": "idlepage.nextSegment",
+        "key": "alt+right",
+        "when": "idlepage.reading && !inputFocus"
+      },
+      {
+        "command": "idlepage.nextChapter",
+        "key": "alt+down",
+        "when": "idlepage.reading && !inputFocus"
+      },
+      {
+        "command": "idlepage.toggleReading",
+        "key": "alt+h",
+        "when": "idlepage.reading && !inputFocus"
       }
     ]
   }

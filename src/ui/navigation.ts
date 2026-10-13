@@ -1,12 +1,13 @@
 import * as vscode from 'vscode';
 import type { QidianAccessProbe } from '../application/QidianAccessProbe';
 
-export const menuCommands = ['idlepage.openBookshelf', 'idlepage.showBrowser', 'idlepage.hideBrowser', 'idlepage.refreshBookshelf', 'idlepage.refreshAll', 'idlepage.cancelTask', 'idlepage.openSettings'];
+export const menuCommands = ['idlepage.openBookshelf', 'idlepage.showBrowser', 'idlepage.hideBrowser', 'idlepage.refreshBookshelf', 'idlepage.refreshAll', 'idlepage.cancelTask', 'idlepage.openSettings', 'idlepage.toggleReading', 'idlepage.retryReading'];
 export function hoverMenu(message: string, busy: boolean): vscode.MarkdownString {
   const menu = new vscode.MarkdownString('', true);
   menu.appendMarkdown('**余页**\n\n'); menu.appendText(message);
   menu.appendMarkdown('\n\n---\n\n[$(library) 进入书架](command:idlepage.openBookshelf)\n\n[$(eye) 显示专用浏览器](command:idlepage.showBrowser)　[$(eye-closed) 隐藏](command:idlepage.hideBrowser)\n\n[$(refresh) 刷新书架](command:idlepage.refreshBookshelf)\n\n[$(refresh) 全部刷新](command:idlepage.refreshAll)\n\n');
   if (busy) menu.appendMarkdown('[$(close) 取消当前任务](command:idlepage.cancelTask)\n\n');
+  menu.appendMarkdown('[隐藏/恢复阅读](command:idlepage.toggleReading)　[重试预取](command:idlepage.retryReading)\n\n');
   menu.appendMarkdown('[$(settings-gear) 设置](command:idlepage.openSettings)');
   menu.isTrusted = { enabledCommands: menuCommands }; return menu;
 }
@@ -50,7 +51,7 @@ export class Navigation {
     const picker = this.picker; if (!picker) return;
     const state = this.probe.snapshot(), shelf = this.probe.getBookshelf(), catalog = this.probe.getCatalog();
     const reading = this.probe.readingLocation();
-    const pending = this.loading || !!this.probe.currentTaskId();
+    const pending = this.loading || !!this.probe.currentTaskId() && !state.background;
     picker.busy = pending;
     picker.title = this.bookId ? `目录 · ${shelf?.books.find(b => b.id === this.bookId)?.title ?? '加载中'}` : '余页 · 书架';
     picker.buttons = this.bookId ? [vscode.QuickInputButtons.Back, this.refresh] : [this.refresh];

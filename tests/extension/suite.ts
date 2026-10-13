@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import * as vscode from 'vscode';
 import { hoverMenu, menuCommands } from '../../src/ui/navigation';
-interface Exports { getBridgeStatus(): { endpoint: string; phase: string }; getCompanionDirectory(): string; getBrowserWindowMode(): string; getEntryStatus(): { text: string; hasClick: boolean; tooltip: string } }
+import { StatusReader } from '../../src/ui/StatusReader';
+interface Exports { getBridgeStatus(): { endpoint: string; phase: string }; getCompanionDirectory(): string; getBrowserWindowMode(): string; getEntryStatus(): { text: string; hasClick: boolean; tooltip: string }; getReaderStatus(): { count: string; progress: number; offset: number; error?: string } }
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<Exports>('myosotis0v0.idle-page');
   assert.ok(extension, 'development extension is registered');
@@ -12,6 +13,17 @@ export async function run(): Promise<void> {
   const commands = await vscode.commands.getCommands(true);
   assert.ok(commands.includes('idlepage.showBrowser'));
   assert.ok(commands.includes('idlepage.hideBrowser'));
+  for (const command of ['nextSegment', 'previousSegment', 'returnReading', 'retryReading', 'toggleReading']) assert.ok(commands.includes('idlepage.' + command));
+  const reader = new StatusReader();
+  try {
+    reader.set('fixture', '一二三四五六七八九十'.repeat(50), 2, 12);
+    assert.equal(reader.state().count, '2/12'); assert.equal(reader.state().progress, 0);
+    reader.next(); const offset = reader.state().offset; assert.ok(offset > 0);
+    reader.failure('测试失败'); assert.ok(reader.state().error);
+    reader.returnReading(); assert.equal(reader.state().error, undefined); assert.equal(reader.state().offset, offset);
+    reader.toggle(); assert.equal(reader.state().hidden, true);
+    reader.toggle(); assert.equal(reader.state().offset, offset);
+  } finally { reader.dispose(); }
   for (const command of menuCommands) assert.ok(commands.includes(command));
   assert.equal(api.getEntryStatus().text, '$(book)'); assert.equal(api.getEntryStatus().hasClick, false);
   const hover = hoverMenu('[bad](command:evil)', true);
@@ -71,17 +83,26 @@ export async function run(): Promise<void> {
   const bodyReply = await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: chapterTask.id, report: { status: 'available', offset: 0, total: body.length, text: body } }) });
   assert.equal(bodyReply.status, 200); assert.ok(!(await bodyReply.text()).includes(body));
   assert.equal(api.getBridgeStatus().phase, 'chapter-preview-ready'); await vscode.commands.executeCommand('idlepage.showChapter');
+  // Switch back to the ordinary UI flow, retaining the last readable chapter.
+  await vscode.commands.executeCommand('idlepage.refreshBookshelf');
+  await vscode.commands.executeCommand('idlepage.cancelTask');
+  assert.equal(api.getReaderStatus().count, '1/2'); assert.equal(api.getReaderStatus().progress, 0);
   assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'started');
   const deniedTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
   assert.equal(deniedTask.url, catalog.chapters[1].url);
   assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'busy');
   assert.equal((await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: deniedTask.id, report: { status: 'unavailable', reason: 'locked' } }) })).status, 200);
   assert.equal(api.getBridgeStatus().phase, 'chapter-unavailable');
+  assert.ok(api.getReaderStatus().error); const retainedOffset = api.getReaderStatus().offset;
+  await vscode.commands.executeCommand('idlepage.returnReading');
+  assert.equal(api.getReaderStatus().error, undefined); assert.equal(api.getReaderStatus().offset, retainedOffset);
+  assert.equal((await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task, null);
   assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'started');
   const retryTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
   assert.equal(retryTask.url, deniedTask.url);
   assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: retryTask.id, report: { ...report, pageKind: 'chapter', bookLinks: 0 } }) })).status, 200);
   assert.equal((await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: retryTask.id, report: { status: 'available', offset: 0, total: body.length, text: body } }) })).status, 200);
+  assert.equal(api.getReaderStatus().count, '2/2'); assert.equal(api.getReaderStatus().progress, 0);
   assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'end');
   await vscode.commands.executeCommand('idlepage.extractChapter');
   const pending = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;

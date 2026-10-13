@@ -262,3 +262,23 @@ test('switching to cached book retires reading tabs but retains bookshelf withou
   assert.equal(h.tabs.at(-1)?.active, false);
   assert.equal(h.closed.has(shelfTab), false);
 });
+
+test('prefetch result leaves reading fixed and a failed page stays available without activating tabs', async t => {
+  const h = await harness(t);
+  h.probe.restoreMetadata({ books: [{ id: '100', title: 'Fixture', url: 'https://www.qidian.com/book/100/' }], strategy: 'table', anchorCount: 1, truncated: false, pagination: 'not-detected', containerHints: [] },
+    { bookId: '100', total: 3, declaredCount: 3, truncated: false, strategy: 'catalog-container', chapters: [1, 2, 3].map(id => ({ id: String(id), title: 'Fixture', volume: '', payment: 'unknown', url: `https://www.qidian.com/chapter/100/${id}/` })) });
+  h.probe.startChapterExtraction(); await h.poll();
+  await h.emit({ ...visible, pageKind: 'chapter' }, { url: 'https://www.qidian.com/chapter/100/1/' });
+  await h.emitChapter({ status: 'available', offset: 0, total: 4, text: 'body' });
+  assert.equal(h.probe.startPrefetch(1), true); await h.poll();
+  await h.emit({ ...visible, pageKind: 'chapter' }, { url: 'https://www.qidian.com/chapter/100/2/' });
+  await h.emitChapter({ status: 'available', offset: 0, total: 4, text: 'body' }, 'https://www.qidian.com/chapter/100/2/');
+  assert.equal(h.probe.readingLocation().chapterId, '1'); assert.equal(h.data.phase, 'prefetch-ready');
+  assert.equal(h.probe.takePrefetchResult()?.chapter?.chapterId, '2');
+  assert.equal(h.probe.startPrefetch(2), true); await h.poll(); const failedTab = h.data.activeTask.tabId;
+  await h.emitChapter({ status: 'unavailable', reason: 'needs-login' }, 'https://www.qidian.com/chapter/100/3/');
+  assert.equal(h.data.phase, 'prefetch-failed'); assert.equal(h.closed.has(failedTab), false);
+  assert.equal(h.data.managedTabs.current.id, failedTab); assert.equal(h.data.managedTabs.previous, null);
+  assert.ok(h.tabs.every(tab => !tab.active)); assert.equal(h.updates.length, 0);
+  assert.equal(h.probe.readingLocation().chapterId, '1');
+});

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "IdlePage Browser Companion",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "Connects an ordinary browser session to the local IdlePage VS Code extension.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA7T65NG4axplOMgu+WGmQcfQrPqU1NYg2oxmoC0zFc9iWeMBkaEiz8lxrUZ47CXxWPPwBIBjlAwo9TWNk4+r/TMLILoz4/Nrnb6+45a8U1pIjXnIJlxqCuGyp9MWmosYaXHJ8QWUnykyA3xdNf9d2DCxTjFZrn67pBN2L1IuuPimbhAjH7RnBMkF9AMRQryLfatiq1GYacl5LUlH5SRIquq+q95+HEWSLMUiQ5r2wwjpJJFWSa/TesEfk+FSJIJsGhgEqvKdkfwzLoDYKYPpDfRHJqI4tjVF9J/r5gg7GbnK5siO3oNGJyseYkt3Az2po5N3zfCY2ozY0wn6eNsRDyQIDAQAB",
   "permissions": [
