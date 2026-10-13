@@ -27,12 +27,12 @@ test('gates, previews, error text and unsupported glyphs are never accepted as b
   assert.equal(extract('<div>普通页面</div>').status, 'pending');
 });
 const observation = { state: 'SiteContentVisible', pageKind: 'bookshelf', bodyCharacters: 1500, bookLinks: 1, verification: false, tooFrequent: false, captchaFrame: false };
-function session() {
+function session(count = 1) {
   const probe = new QidianAccessProbe(); probe.startChapterExtraction(); let task = probe.nextTask()!;
   probe.accept(task.id, observation);
   probe.acceptBookshelf(task.id, { books: [{ id: '100', title: 'Fixture book', url: 'https://www.qidian.com/book/100/' }], strategy: 'table', anchorCount: 1, truncated: false, pagination: 'not-detected', containerHints: [] });
   task = probe.nextTask()!; probe.accept(task.id, { ...observation, pageKind: 'book' });
-  probe.acceptCatalog(task.id, { bookId: '100', offset: 0, total: 1, declaredCount: null, truncated: false, strategy: 'catalog-container', chapters: [{ id: '1', title: 'Fixture chapter', volume: '', payment: 'paid', url: 'https://www.qidian.com/chapter/100/1/' }] });
+  probe.acceptCatalog(task.id, { bookId: '100', offset: 0, total: count, declaredCount: null, truncated: false, strategy: 'catalog-container', chapters: Array.from({ length: count }, (_, i) => ({ id: String(i + 1), title: `Fixture chapter ${i + 1}`, volume: '', payment: 'paid', url: `https://www.qidian.com/chapter/100/${i + 1}/` })) });
   task = probe.nextTask()!; assert.equal(task.kind, 'chapter');
   return { probe, task };
 }
@@ -45,6 +45,30 @@ test('unified chapter pipeline accepts ordered chunks regardless of price; summa
   assert.equal(probe.acceptChapter(task.id, { ...batch, offset: 3, text: '正文乙' }), 'accepted');
   assert.equal(probe.getChapter()?.status, 'available'); assert.ok(!JSON.stringify(probe.snapshot()).includes('正文甲'));
   assert.equal(probe.snapshot().chapterSummary?.characters, 6);
+});
+
+test('next chapter commits position only after success, retains current text on failure, and retries same neighbor', () => {
+  const { probe, task } = session(2);
+  const complete = (id: string, text: string) => {
+    probe.accept(id, { ...observation, pageKind: 'chapter' });
+    assert.equal(probe.acceptChapter(id, { status: 'available', offset: 0, total: text.length, text }), 'accepted');
+  };
+  assert.equal(probe.startNextChapter(), 'busy');
+  complete(task.id, '第一章正文');
+  assert.equal(probe.snapshot().chapterNavigation.current, 1);
+  assert.equal(probe.startNextChapter(), 'started');
+  const second = probe.nextTask()!; assert.equal(second.url, 'https://www.qidian.com/chapter/100/2/');
+  assert.equal(probe.startNextChapter(), 'busy');
+  assert.equal(probe.acceptChapter(task.id, { status: 'unavailable', reason: 'locked' }), 'stale');
+  probe.acceptChapter(second.id, { status: 'unavailable', reason: 'locked' });
+  assert.equal(probe.snapshot().chapterNavigation.current, 1); assert.equal(probe.getReadingChapter()?.text, '第一章正文');
+  assert.equal(probe.startNextChapter(), 'started'); const retry = probe.nextTask()!;
+  assert.equal(retry.url, second.url); assert.notEqual(retry.id, second.id);
+  complete(retry.id, '第二章正文');
+  assert.equal(probe.snapshot().chapterNavigation.current, 2); assert.equal(probe.getReadingChapter()?.text, '第二章正文');
+  assert.equal(probe.startNextChapter(), 'end'); assert.equal(probe.nextTask(), null);
+  assert.equal(new QidianAccessProbe().startNextChapter(), 'busy');
+  const empty = session(); empty.probe.acceptChapter(empty.task.id, { status: 'unavailable', reason: 'locked' }); assert.equal(empty.probe.startNextChapter(), 'not-ready');
 });
 test('login, challenge, explicit unavailable and navigation timeout all produce reminders', () => {
   for (const state of ['NeedsLogin', 'AccessBlocked']) { const { probe, task } = session(); probe.accept(task.id, { ...observation, pageKind: state === 'NeedsLogin' ? 'login' : 'chapter', state, captchaFrame: state === 'AccessBlocked' }); assert.equal(probe.getChapter()?.status, 'unavailable'); }

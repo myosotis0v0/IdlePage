@@ -48,12 +48,14 @@ export async function activate(context: vscode.ExtensionContext) {
     catalogPanel.webview.html = catalogPreview(catalog, title); catalogPanel.reveal();
   };
   const showChapter = () => {
-    const result = probe.getChapter(); if (!result) { void vscode.window.showInformationMessage('尚未收到正文获取结果。'); return; }
+    const result = probe.getChapter(); const reading = probe.getReadingChapter();
+    if (!result && !reading) { void vscode.window.showInformationMessage('尚未收到正文获取结果。'); return; }
     if (!chapterPanel) {
-      chapterPanel = vscode.window.createWebviewPanel('idlepage.chapter', 'IdlePage：正文核对', vscode.ViewColumn.Active, { enableScripts: false });
+      chapterPanel = vscode.window.createWebviewPanel('idlepage.chapter', 'IdlePage：正文核对', vscode.ViewColumn.Active, { enableScripts: false, enableCommandUris: ['idlepage.nextChapter'] });
       chapterPanel.onDidDispose(() => { chapterPanel = undefined; }); context.subscriptions.push(chapterPanel);
     }
-    chapterPanel.webview.html = chapterPreview(result); chapterPanel.reveal();
+    const notice = result?.status === 'unavailable' ? chapterFailureMessage[result.reason] : undefined;
+    chapterPanel.webview.html = chapterPreview(reading ?? result!, reading ? probe.snapshot().chapterNavigation : undefined, notice); chapterPanel.reveal();
   };
   const update = () => {
     const snapshot = probe.snapshot();
@@ -116,6 +118,13 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('idlepage.showCatalog', showCatalog),
       vscode.commands.registerCommand('idlepage.extractChapter', () => { chapterShown = false; probe.startChapterExtraction(); update(); }),
       vscode.commands.registerCommand('idlepage.showChapter', showChapter),
+      vscode.commands.registerCommand('idlepage.nextChapter', () => {
+        const result = probe.startNextChapter();
+        if (result !== 'started') {
+          void vscode.window.showInformationMessage({ busy: '正在获取章节，请稍候。', 'not-ready': '请先获取当前章正文。', end: '本次目录没有下一章。' }[result]); return result;
+        }
+        chapterShown = false; showChapter(); update(); return result;
+      }),
     );
     const expiryTimer = setInterval(() => { if (probe.expireChapter()) update(); }, 1000);
     context.subscriptions.push({ dispose: () => clearInterval(expiryTimer) });

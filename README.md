@@ -25,7 +25,7 @@ npm run test:extension
 npm run dev:live
 ```
 
-`dev:live` 打开持续运行的 VS Code 开发窗口，自动激活 IdlePage 并打开普通 Edge 的扩展管理页。配对目录已复制到剪贴板，在 Edge 开发人员模式中加载此目录。停用旧的 **IdlePage Qidian Access Probe** 实验扩展，避免两个测试同时运行。一次性安装后，**IdlePage Browser Companion** 自动连接并执行 VS Code 下发的任务，无需点击提取。当前 dev:live 自动依次获取当前页书单、第一本书目录和第一章正文，并在 VS Code 显示正文核对或不可获取提醒。
+`dev:live` 打开持续运行的 VS Code 开发窗口，自动激活 IdlePage 并打开普通 Edge 的扩展管理页。配对目录已复制到剪贴板，在 Edge 开发人员模式中加载此目录。停用旧的 **IdlePage Qidian Access Probe** 实验扩展，避免两个测试同时运行。一次性安装后，**IdlePage Browser Companion** 自动连接并执行 VS Code 下发的任务，无需点击提取。当前 dev:live 自动依次获取当前页书单、第一本书目录和第一章正文，并在 VS Code 显示正文核对或不可获取提醒。当前验证入口取得第一章后自动执行一次下一章，正文页也可点击“下一章”。
 
 也可以在当前项目按 F5，选择 Run IdlePage；然后在开发窗口运行命令 `IdlePage: 准备浏览器连接`，加载该窗口生成的配对目录。不要直接加载源码 `browser-extension/`，其中不包含运行所需的本机配对文件。
 
@@ -42,6 +42,7 @@ npm run dev:live
 - `IdlePage: 查看本次目录`：重新显示目录核对页。
 - `IdlePage: 测试第一章正文获取`：从当前目录选择第一章，统一测试正文获取。
 - `IdlePage: 查看本次正文结果`：重新显示正文或不可获取原因。
+- `IdlePage: 下一章`：按当前目录顺序获取下一章；失败保留当前正文和位置，可再次点击重试。
 
 更新浏览器辅助扩展后，在 Edge 扩展管理页对 IdlePage Browser Companion 重新加载一次。若验证页仍显示 disconnected，可查看 connectionError：BridgeStatus401 表示配对凭据不匹配，BridgeStatus403 表示来源检查失败，BridgeTimeout/BridgeNetworkError 表示服务超时或网络请求失败；不要复制或发送配对密钥。
 

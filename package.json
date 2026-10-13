@@ -93,6 +93,10 @@
       {
         "command": "idlepage.showChapter",
         "title": "IdlePage: 查看本次正文结果"
+      },
+      {
+        "command": "idlepage.nextChapter",
+        "title": "IdlePage: 下一章"
       }
     ]
   }

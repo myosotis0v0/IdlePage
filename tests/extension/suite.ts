@@ -40,7 +40,7 @@ export async function run(): Promise<void> {
   assert.equal(catalogTask.kind, 'catalog');
   assert.equal(catalogTask.bookId, '123');
   assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: catalogTask.id, report: { ...report, pageKind: 'book', bookLinks: 0 } }) })).status, 200);
-  const catalog = { bookId: '123', offset: 0, total: 1, declaredCount: 1, truncated: false, strategy: 'catalog-container', chapters: [{ id: '11', title: 'Fixture chapter', url: 'https://www.qidian.com/chapter/123/11/', volume: 'Fixture volume', payment: 'free' }] };
+  const catalog = { bookId: '123', offset: 0, total: 2, declaredCount: 2, truncated: false, strategy: 'catalog-container', chapters: [{ id: '11', title: 'Fixture chapter', url: 'https://www.qidian.com/chapter/123/11/', volume: 'Fixture volume', payment: 'free' }, { id: '12', title: 'Fixture next chapter', url: 'https://www.qidian.com/chapter/123/12/', volume: 'Fixture volume', payment: 'unknown' }] };
   const catalogReply = await fetch(endpoint + '/v1/catalog/result', { method: 'POST', headers, body: JSON.stringify({ taskId: catalogTask.id, report: catalog }) });
   assert.equal(catalogReply.status, 200);
   assert.ok(!(await catalogReply.text()).includes('Fixture chapter'));
@@ -54,9 +54,17 @@ export async function run(): Promise<void> {
   const bodyReply = await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: chapterTask.id, report: { status: 'available', offset: 0, total: body.length, text: body } }) });
   assert.equal(bodyReply.status, 200); assert.ok(!(await bodyReply.text()).includes(body));
   assert.equal(api.getBridgeStatus().phase, 'chapter-preview-ready'); await vscode.commands.executeCommand('idlepage.showChapter');
-  await vscode.commands.executeCommand('idlepage.extractChapter');
+  assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'started');
   const deniedTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
+  assert.equal(deniedTask.url, catalog.chapters[1].url);
+  assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'busy');
   assert.equal((await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: deniedTask.id, report: { status: 'unavailable', reason: 'locked' } }) })).status, 200);
   assert.equal(api.getBridgeStatus().phase, 'chapter-unavailable');
-  console.log('IdlePage extension-host smoke test passed (synthetic access, shelf, catalog and chapter success/failure; no Qidian requests).');
+  assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'started');
+  const retryTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
+  assert.equal(retryTask.url, deniedTask.url);
+  assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: retryTask.id, report: { ...report, pageKind: 'chapter', bookLinks: 0 } }) })).status, 200);
+  assert.equal((await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: retryTask.id, report: { status: 'available', offset: 0, total: body.length, text: body } }) })).status, 200);
+  assert.equal(await vscode.commands.executeCommand('idlepage.nextChapter'), 'end');
+  console.log('IdlePage extension-host smoke test passed (synthetic chapter navigation, failure retry and directory end; no Qidian requests).');
 }
