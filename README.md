@@ -4,6 +4,10 @@ A discreet VS Code novel reader with status bar reading, online book sources, an
 
 自用 VS Code 小说阅读器，通过普通 Edge 中的浏览器伴随扩展接入起点中文网。账号登录由用户在官方页面完成，书架、目录和正文读取由 VS Code 发起，在 VS Code 中查看结果。
 
+![余页状态栏阅读与书本悬停菜单](media/reading-preview.png)
+
+*状态栏阅读效果示意，菜单以当前版本为准。*
+
 ## 功能
 
 - 获取当前页书架书单和书籍目录。

@@ -21,6 +21,9 @@ try {
   Copy-Item -LiteralPath $vsix -Destination $stage
   Copy-Item -LiteralPath (Join-Path $project 'docs/INSTALL-RELEASE.md') -Destination (Join-Path $stage 'INSTALL.md')
   Copy-Item -LiteralPath (Join-Path $project 'README.md') -Destination $stage
+  $media = Join-Path $stage 'media'
+  New-Item -ItemType Directory -Path $media | Out-Null
+  Copy-Item -LiteralPath (Join-Path $project 'media/reading-preview.png') -Destination $media
   Copy-Item -LiteralPath (Join-Path $project 'LICENSE') -Destination $stage
   $hashes = foreach ($file in Get-ChildItem -LiteralPath $stage -File -Recurse | Sort-Object FullName) {
     $relative = $file.FullName.Substring($stage.Length + 1).Replace('\','/')
