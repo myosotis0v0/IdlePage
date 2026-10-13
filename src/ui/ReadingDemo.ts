@@ -3,15 +3,16 @@ import { randomBytes } from 'node:crypto';
 
 /** Visual prototype only: fixture text, no browser, bridge or reading-cache access. */
 export class ReadingDemo implements vscode.WebviewViewProvider {
+  constructor(private sidebar = false) {}
   resolveWebviewView(view: vscode.WebviewView) {
     view.webview.options = { enableScripts: true, localResourceRoots: [] };
-    view.webview.html = readingDemoHtml();
+    view.webview.html = readingDemoHtml(this.sidebar);
     view.webview.onDidReceiveMessage(message => {
-      if (message?.type === 'hide') void vscode.commands.executeCommand('workbench.action.closePanel');
+      if (message?.type === 'hide') void vscode.commands.executeCommand(this.sidebar ? 'workbench.action.closeAuxiliaryBar' : 'workbench.action.closePanel');
     });
   }
 }
-export function readingDemoHtml() {
+export function readingDemoHtml(sidebar = false) {
   const nonce = randomBytes(16).toString('hex');
   return `<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -23,6 +24,7 @@ export function readingDemoHtml() {
 #text{font-size:14px;line-height:26px;white-space:pre;overflow:hidden;cursor:pointer;outline-offset:2px;min-width:0}
 #measure{position:absolute;visibility:hidden;white-space:pre;font-size:14px;line-height:26px;pointer-events:none}
 .controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}button{font:inherit;color:var(--vscode-foreground);background:transparent;border:1px solid transparent;border-radius:3px;padding:4px 8px;cursor:pointer}button:hover{background:var(--vscode-toolbar-hoverBackground)}button:focus-visible,#text:focus-visible{outline:1px solid var(--vscode-focusBorder)}button:disabled{opacity:.35;cursor:default}.muted{color:var(--vscode-descriptionForeground);font-size:11px}.spacer{flex:1}#failure{display:none;color:var(--vscode-editorWarning-foreground);line-height:26px}body.failed #text{display:none}body.failed #failure{display:block}#return{display:none}body.failed #return{display:inline-block}
+${sidebar ? '#text{white-space:pre-wrap;height:104px;overflow-wrap:anywhere}#measure{white-space:pre-wrap;overflow-wrap:anywhere;display:block}.reading{align-items:start;grid-template-columns:44px minmax(0,1fr) 36px;gap:8px}.muted{display:none}.controls{margin-top:6px;gap:3px}body{padding:8px 10px}' : ''}
 </style></head><body>
 <div class="reading"><span id="number">1/6</span><div id="text" tabindex="0" role="button" aria-label="正文，点击下一段"></div><span id="failure">读取失败，请显示浏览器检查</span><span id="progress">0%</span></div>
 <div class="controls"><button id="previous">← 上一段</button><button id="next">下一段 →</button><button id="chapter">下一章</button><button id="return">返回阅读</button><span class="spacer"></span><span class="muted">示例正文 · 拖动面板边缘查看自适应效果</span><button id="error">模拟失败</button><button id="hide">隐藏</button></div>
@@ -34,8 +36,8 @@ const text=Array.from(fixture.repeat(4));let offset=0,end=0,chapter=1;const hist
 const el=id=>document.getElementById(id);const row=el('text'),measure=el('measure');
 function render(){
  if(document.body.classList.contains('failed'))return;
- const width=Math.max(0,row.clientWidth-4);let low=offset,high=text.length;
- while(low<high){const middle=Math.ceil((low+high)/2);measure.textContent=text.slice(offset,middle).join('');if(measure.getBoundingClientRect().width<=width)low=middle;else high=middle-1;}
+ const width=Math.max(0,row.clientWidth-4);const multiline=${sidebar};if(multiline)measure.style.width=width+'px';let low=offset,high=text.length;
+ while(low<high){const middle=Math.ceil((low+high)/2);measure.textContent=text.slice(offset,middle).join('');if(multiline?measure.getBoundingClientRect().height<=row.clientHeight:measure.getBoundingClientRect().width<=width)low=middle;else high=middle-1;}
  end=Math.max(offset+1,low);row.textContent=text.slice(offset,end).join('');
  el('number').textContent=chapter+'/6';el('progress').textContent=(offset===0?0:end>=text.length?100:Math.floor(offset/(text.length-1)*100))+'%';el('previous').disabled=!history.length;
 }

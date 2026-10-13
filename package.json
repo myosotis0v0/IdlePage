@@ -182,6 +182,10 @@
       {
         "command": "idlepage.openReadingDemo",
         "title": "余页: 打开底部阅读演示"
+      },
+      {
+        "command": "idlepage.openSidebarReadingDemo",
+        "title": "余页: 在 Codex 上方打开阅读演示"
       }
     ],
     "keybindings": [
@@ -209,18 +213,24 @@
     "viewsContainers": {
       "panel": [
         {
-          "id": "idlepage.demo",
+          "id": "idlepage-demo",
           "title": "余页演示",
           "icon": "media/book.svg"
         }
       ]
     },
     "views": {
-      "idlepage.demo": [
+      "idlepage-demo": [
         {
           "id": "idlepage.readingDemo",
           "name": "阅读预览",
           "type": "webview"
+        },
+        {
+          "id": "idlepage.sidebarReadingDemo",
+          "name": "余页阅读演示",
+          "type": "webview",
+          "visibility": "hidden"
         }
       ]
     }

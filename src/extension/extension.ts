@@ -25,6 +25,16 @@ let stopBrowser: (() => Promise<void>) | undefined;
 export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.window.registerWebviewViewProvider('idlepage.readingDemo', new ReadingDemo(), { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.commands.registerCommand('idlepage.openReadingDemo', () => vscode.commands.executeCommand('idlepage.readingDemo.focus')));
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider('idlepage.sidebarReadingDemo', new ReadingDemo(true), { webviewOptions: { retainContextWhenHidden: true } }),
+    vscode.commands.registerCommand('idlepage.openSidebarReadingDemo', async () => {
+      if (!vscode.extensions.getExtension('openai.chatgpt')) throw new Error('CodexExtensionRequired');
+      await vscode.commands.executeCommand('chatgpt.sidebarSecondaryView.focus');
+      await vscode.commands.executeCommand('vscode.moveViews', { viewIds: ['idlepage.sidebarReadingDemo'], destinationId: 'workbench.view.extension.codexSecondaryViewContainer' });
+      await vscode.commands.executeCommand('idlepage.sidebarReadingDemo.focus');
+      await new Promise(resolve => setTimeout(resolve, 500));
+      await vscode.commands.executeCommand('setContext', 'focusedView', 'idlepage.sidebarReadingDemo');
+      try { await vscode.commands.executeCommand('views.moveViewUp'); } finally { await vscode.commands.executeCommand('idlepage.sidebarReadingDemo.focus'); }
+    }));
   const output = vscode.window.createOutputChannel('IdlePage');
   const reader = new StatusReader(); context.subscriptions.push(reader);
   let prefetch: ReadingPrefetch | undefined;
