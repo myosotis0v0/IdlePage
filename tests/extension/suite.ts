@@ -3,11 +3,15 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import * as vscode from 'vscode';
-interface Exports { getBridgeStatus(): { endpoint: string; phase: string }; getCompanionDirectory(): string }
+interface Exports { getBridgeStatus(): { endpoint: string; phase: string }; getCompanionDirectory(): string; getBrowserWindowMode(): string }
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension<Exports>('myosotis0v0.idle-page');
   assert.ok(extension, 'development extension is registered');
   const api = await extension.activate();
+  const commands = await vscode.commands.getCommands(true);
+  assert.ok(commands.includes('idlepage.showBrowser'));
+  assert.ok(commands.includes('idlepage.hideBrowser'));
+  assert.equal(api.getBrowserWindowMode(), 'managed');
   const companion = api.getCompanionDirectory();
   const pairing = await readFile(join(companion, 'pairing.js'), 'utf8');
   const token = /export const token = "([a-f0-9]{64})";/.exec(pairing)?.[1];

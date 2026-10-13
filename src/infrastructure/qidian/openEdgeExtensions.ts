@@ -1,6 +1,7 @@
 ﻿import { spawn } from 'node:child_process';
 import { access, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { edgeProfile } from './edgeProfile';
 
 async function openEdge(url: string): Promise<void> {
   if (process.platform !== 'win32' || !process.env.LOCALAPPDATA) throw new Error('WindowsEdgeRequired');
@@ -12,7 +13,7 @@ async function openEdge(url: string): Promise<void> {
   let executable: string | undefined;
   for (const candidate of candidates) { try { await access(candidate); executable = candidate; break; } catch {} }
   if (!executable) throw new Error('EdgeNotFound');
-  const profile = join(process.env.LOCALAPPDATA, 'IdlePage/qidian-probe/manual-edge-profile');
+  const profile = edgeProfile();
   await mkdir(profile, { recursive: true });
   const child = spawn(executable, [`--user-data-dir=${profile}`, '--no-first-run', url], { detached: true, stdio: 'ignore', windowsHide: true });
   await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });

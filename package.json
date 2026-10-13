@@ -65,6 +65,14 @@
     },
     "commands": [
       {
+        "command": "idlepage.showBrowser",
+        "title": "IdlePage: 显示辅助浏览器"
+      },
+      {
+        "command": "idlepage.hideBrowser",
+        "title": "IdlePage: 隐藏辅助浏览器"
+      },
+      {
         "command": "idlepage.showStatus",
         "title": "IdlePage: 查看接入状态"
       },

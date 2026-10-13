@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { QidianAccessProbe } from '../application/QidianAccessProbe';
 import { BrowserSession } from '../application/BrowserSession';
+import { BrowserWindowController } from '../application/BrowserWindowController';
+import { EdgeWindowControl } from '../infrastructure/qidian/EdgeWindowControl';
 import { LocalBridgeServer } from '../infrastructure/local-bridge/LocalBridgeServer';
 import { prepareCompanion, readCompanionOrigin, readExistingPairingToken } from '../infrastructure/local-bridge/prepareCompanion';
 import { openEdgeExtensions, openEdgeCompanion } from '../infrastructure/qidian/openEdgeExtensions';
@@ -20,6 +22,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(output, status);
   const storage = context.globalStorageUri.fsPath;
   const probe = new QidianAccessProbe();
+  const browserWindows = new BrowserWindowController(new EdgeWindowControl());
   let browserSession: BrowserSession | undefined;
   let reportWrites = Promise.resolve();
   let lastDisplay = '';
@@ -117,7 +120,28 @@ export async function activate(context: vscode.ExtensionContext) {
     update();
     output.appendLine(`本机服务：${bridge.endpoint()}`);
     output.appendLine(`浏览器辅助扩展目录：${companion.directory}`);
+    const controlBrowserWindow = async (action: 'show' | 'hide') => {
+      try {
+        const result = await (action === 'show' ? browserWindows.show() : browserWindows.hide());
+        if (result.status === 'ok') {
+          void vscode.window.showInformationMessage(action === 'show' ? '已显示辅助浏览器，进入排查状态。执行“隐藏辅助浏览器”可恢复自动管理。' : '已隐藏辅助浏览器；浏览器仍在运行。');
+        } else {
+          const messages = { 'not-running': '专用 Edge 尚未运行，请先发起读取任务或运行“准备浏览器连接”。',
+            'no-window': '专用 Edge 当前没有可控制的窗口，请稍后重试。',
+            ambiguous: '无法唯一识别 IdlePage 专用 Edge，未更改窗口。', failed: '辅助浏览器窗口控制未完成，请稍后重试。' };
+          void vscode.window.showWarningMessage(messages[result.status]);
+        }
+        output.appendLine(`浏览器窗口：${action} / ${result.status}`);
+        return result.status;
+      } catch {
+        output.appendLine('浏览器窗口控制失败');
+        void vscode.window.showWarningMessage('无法控制辅助浏览器窗口，请确认正在 Windows 桌面环境运行。');
+        return 'failed';
+      }
+    };
     context.subscriptions.push(
+      vscode.commands.registerCommand('idlepage.showBrowser', () => controlBrowserWindow('show')),
+      vscode.commands.registerCommand('idlepage.hideBrowser', () => controlBrowserWindow('hide')),
       vscode.commands.registerCommand('idlepage.showStatus', () => {
         output.appendLine(JSON.stringify(probe.snapshot(), null, 2)); output.show(true);
       }),
@@ -146,7 +170,8 @@ export async function activate(context: vscode.ExtensionContext) {
     );
     const expiryTimer = setInterval(() => { if (probe.expireChapter()) update(); }, 1000);
     context.subscriptions.push({ dispose: () => clearInterval(expiryTimer) });
-    return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory };
+    return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory,
+      getBrowserWindowMode: () => browserWindows.mode };
   } catch (error) {
     await bridge?.close(); bridge = undefined;
     const code = (error as NodeJS.ErrnoException).code;
