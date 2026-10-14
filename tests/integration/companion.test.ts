@@ -238,6 +238,23 @@ test('managed chapter tabs stay at one after success, two in transit, and restor
   assert.equal(h.closed.has(old), false); assert.equal(h.data.taskTabSummary.count, 1);
 });
 
+test('reading failure advances once through the real bridge without focusing or accumulating tabs', async t => {
+  const h = await harness(t);
+  h.probe.setReadingMode(true);
+  h.probe.resumeBook('100', { bookId: '100', total: 3, declaredCount: 3, truncated: false, strategy: 'catalog-container',
+    chapters: [1, 2, 3].map(id => ({ id: String(id), title: `Fixture ${id}`, volume: '', payment: 'unknown', url: `https://www.qidian.com/chapter/100/${id}/` })) });
+  h.probe.selectChapter('100', '1'); await h.poll();
+  await h.emitChapter({ status: 'unavailable', reason: 'locked' }, 'https://www.qidian.com/chapter/100/1/');
+  assert.equal(h.data.activeTask.url, 'https://www.qidian.com/chapter/100/2/');
+  assert.ok(h.tabs.filter(tab => !h.closed.has(tab.id)).length <= 2);
+  await h.emit({ ...visible, pageKind: 'chapter' }, { url: 'https://www.qidian.com/chapter/100/2/' });
+  await h.emitChapter({ status: 'available', offset: 0, total: 4, text: 'body' }, 'https://www.qidian.com/chapter/100/2/');
+  assert.equal(h.probe.readingLocation().chapterId, '2');
+  assert.equal(h.probe.takeSkipNotice(), 'Fixture 1');
+  assert.equal(h.data.managedTabs.previous, null);
+  assert.ok(h.tabs.every(tab => !tab.active)); assert.equal(h.updates.length, 0);
+});
+
 test('switching to cached book retires reading tabs but retains bookshelf without creating tabs', async t => {
   const h = await harness(t);
   await h.emit();

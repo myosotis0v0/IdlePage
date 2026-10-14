@@ -139,6 +139,8 @@ export async function activate(context: vscode.ExtensionContext) {
     chapterPanel.webview.html = chapterPreview(reading ?? result!, reading ? probe.snapshot().chapterNavigation : undefined, notice, probe.snapshot().chapterSource); chapterPanel.reveal();
   };
   const update = () => {
+    const skippedTitle = probe.takeSkipNotice();
+    if (skippedTitle !== undefined) vscode.window.setStatusBarMessage(`余页：已跳过加载失败章节「${skippedTitle}」，已接续下一章`, 15000);
     const snapshot = { ...probe.snapshot(), cache: cache?.summary(), browserConnection: browserSession?.state,
       browserWindow: { mode: browserWindows.mode, lastAutomaticControl: visibility.lastResult } };
     if (setup.observe(snapshot)) {
@@ -171,7 +173,7 @@ export async function activate(context: vscode.ExtensionContext) {
       const resume = bookmark?.bookId === reading.catalog.bookId && bookmark.chapterId === chapter.id;
       displayedBookmark = { bookId: reading.catalog.bookId, chapterId: chapter.id, title: chapter.title };
       pendingResume = undefined;
-      reader.set(String(reading.revision), body.text, reading.index + 1, reading.catalog.chapters.length, resume ? bookmark.offset : 0, resume);
+      reader.set(String(reading.revision), body.text, reading.index + 1, reading.catalog.chapters.length, resume ? bookmark.offset : 0, !!bookmark);
       void vscode.commands.executeCommand('setContext', 'idlepage.reading', true);
     }
     if (!diagnosticPreviews && !refreshing && !shuttingDown) prefetch?.sync();

@@ -18,7 +18,10 @@ export class QidianAccessProbe {
     this.beginChapter(this.pendingChapterIndex, this.taskCatalog); return true;
   }
   private taskCatalog?: CatalogResult;
-  private prefetchResult?: { chapter?: CachedChapter; reason?: string };
+  private prefetchResult?: { chapter?: CachedChapter; reason?: string; skippedIndex?: number };
+  private skippedChapter?: { index: number; title: string };
+  private skipNotice?: string;
+  takeSkipNotice() { const title = this.skipNotice; this.skipNotice = undefined; return title; }
   isPrefetching() { return this.background; }
   readingContext() { return this.readingChapter && this.readingCatalog ? { revision: this.readingRevision, catalog: this.readingCatalog, index: this.currentChapterIndex } : undefined; }
   takePrefetchResult() { const result = this.prefetchResult; this.prefetchResult = undefined; return result; }
@@ -64,7 +67,7 @@ export class QidianAccessProbe {
   }
   cacheRevision() { return this.revision; }
   invalidateTask(): void {
-    this.background = false; this.prefetchResult = undefined;
+    this.background = false; this.prefetchResult = undefined; this.skippedChapter = undefined; this.skipNotice = undefined;
     this.task = null; this.suspended = undefined; this.failure = undefined; this.report = undefined;
     this.chapterDeadline = 0; this.chapterText = ''; this.cacheTask = undefined; this.chapter = undefined;
     this.chapterGoal = false; this.phase = 'idle';
@@ -222,7 +225,8 @@ export class QidianAccessProbe {
     this.chapter = undefined; this.beginChapter(next); return 'started';
   }
   getReadingChapter() { return this.readingChapter ? structuredClone(this.readingChapter) : undefined; }
-  private beginChapter(index = 0, catalog = this.catalog!): void {
+  private beginChapter(index = 0, catalog = this.catalog!, fallback = false): void {
+    if (!fallback) this.skippedChapter = undefined;
     this.taskCatalog = catalog;
     this.taskStarted = Date.now();
     this.pendingChapterIndex = index;
@@ -237,9 +241,17 @@ export class QidianAccessProbe {
     if (this.cacheTask) { this.phase = 'checking-cache'; this.chapterDeadline = 0; }
   }
   private finishChapter(result: ChapterResult, source: 'online' | 'cache' = 'online'): void {
+    if (result.status === 'unavailable' && result.reason !== 'cancelled' && (this.readingMode || this.background)
+      && !this.skippedChapter && this.taskCatalog?.chapters[this.pendingChapterIndex + 1]) {
+      this.skippedChapter = { index: this.pendingChapterIndex, title: this.taskCatalog.chapters[this.pendingChapterIndex].title };
+      this.failure = undefined;
+      this.beginChapter(this.pendingChapterIndex + 1, this.taskCatalog, true);
+      return;
+    }
+    if (result.status === 'available' && this.skippedChapter) this.skipNotice = this.skippedChapter.title;
     if (this.background) {
       const target = this.taskCatalog!.chapters[this.pendingChapterIndex];
-      this.prefetchResult = result.status === 'available' ? { chapter: { bookId: this.taskCatalog!.bookId, chapterId: target.id, url: target.url, title: target.title, text: result.text } } : { reason: result.reason };
+      this.prefetchResult = result.status === 'available' ? { skippedIndex: this.skippedChapter?.index, chapter: { bookId: this.taskCatalog!.bookId, chapterId: target.id, url: target.url, title: target.title, text: result.text } } : { reason: result.reason };
       this.background = false; this.task = null; this.chapterText = ''; this.chapterDeadline = 0; this.cacheTask = undefined;
       this.phase = result.status === 'available' ? 'prefetch-ready' : 'prefetch-failed'; return;
     }

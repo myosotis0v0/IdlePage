@@ -44,7 +44,10 @@ export class ReadingPrefetch {
       const saved = await this.cache.saveChapter(result.chapter);
       if (!this.current(generation)) return;
       if (!saved) { this.stop('cache-capacity'); return; }
-      this.cursor++;
+      if (result.skippedIndex !== undefined) this.targets = this.targets.filter(target => target.index !== result.skippedIndex);
+      const completed = this.targets.findIndex(target => target.id === result.chapter!.chapterId);
+      // A failure at the horizon edge may fetch exactly one chapter beyond it.
+      if (completed >= 0) this.cursor = completed + 1;
     }
     while (this.current(generation) && this.cursor < this.targets.length) {
       const target = this.targets[this.cursor];

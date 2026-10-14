@@ -2,6 +2,8 @@
 
 - After every complete functional update, run appropriate checks and generate a fresh installable VSIX using npm run package:vsix. Increment the patch version for a new functional build; report the artifact path. Release bundles must not generate or include SHA256 checksum files, per user preference.
 
+- Chapter failure exception to the stop-on-error rules below: normal foreground reading and background prefetch may attempt the immediate successor once. Report the skipped title after success; stop on two consecutive failures or no successor. Cancellation and cache storage failures do not advance. Background fallback never commits reading progress, and may reach only one chapter past the three-chapter horizon. Legacy diagnostic probes retain their original failure behavior.
+
 - Production extension code belongs in src/. It must never import labs/.
 - Experimental Qidian browser probes belong in labs/qidian/; they are not shipped with the extension.
 - Tests for promoted production behavior belong in tests/. Browser feasibility probes are not production tests.

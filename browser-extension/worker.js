@@ -111,7 +111,7 @@ async function handleObservation(message, sender) {
     await chrome.storage.local.set({ phase: reply.phase, chapterSummary: reply.chapterSummary ?? null });
     if (['chapter-preview-ready', 'prefetch-ready', 'prefetch-failed'].includes(reply.phase)) await settleTabs(activeTask.tabId);
     if (reply.phase === 'chapter-unavailable') await settleTabs(activeTask.tabId, !activeTask.purpose && !['needs-login', 'access-blocked'].includes(message.batch?.reason));
-    if (['chapter-preview-ready', 'chapter-unavailable', 'waiting-login', 'prefetch-ready', 'prefetch-failed'].includes(reply.phase)) await poll();
+    if (['chapter-preview-ready', 'chapter-unavailable', 'waiting-login', 'prefetch-ready', 'prefetch-failed', 'waiting-chapter', 'checking-cache'].includes(reply.phase)) await poll();
     return { accepted: true };
   }
   if (message.type === 'idlepage-catalog') {

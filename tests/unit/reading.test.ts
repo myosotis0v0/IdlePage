@@ -37,11 +37,13 @@ test('three chapter horizon never changes reading, advances by one and reuses ca
   complete(p); h.scheduler.sync(); await until(() => h.data.has('5'));
   assert.equal(p.readingLocation().chapterId, '2'); assert.deepEqual(h.failures, []);
 });
-test('prefetch login and unavailable failures stop silently without altering position or automatic retry', async () => {
+test('prefetch stops after two failures without altering position or automatic retry', async () => {
   for (const reason of ['needs-login', 'locked', 'access-blocked'] as const) {
     const p = probe(); const h = setup(p); h.scheduler.sync(); await until(() => p.isPrefetching());
     const task = p.nextTask()!;
     p.acceptChapter(task.id, { status: 'unavailable', reason }); h.scheduler.sync();
+    assert.ok(p.nextTask()!.url.endsWith('/3/')); assert.deepEqual(h.failures, []);
+    p.acceptChapter(p.nextTask()!.id, { status: 'unavailable', reason }); h.scheduler.sync();
     await until(() => h.failures.length === 1);
     assert.equal(p.snapshot().recovery.waitingLogin, false); assert.equal(p.nextTask(), null);
     assert.equal(p.readingLocation().chapterId, '1'); assert.equal(p.getReadingChapter()?.text, 'body');
@@ -65,13 +67,61 @@ test('cache disabled, rejected writes and timeout report a single stopped prefet
   const h = setup(p, false); h.scheduler.sync(); await until(() => p.isPrefetching()); complete(p); h.scheduler.sync();
   await until(() => h.failures.length === 1); assert.equal(h.failures[0], 'cache-capacity');
   h.scheduler.retry(); await until(() => p.isPrefetching()); p.expireChapter(Date.now() + 100000); h.scheduler.sync();
+  p.expireChapter(Date.now() + 100000); h.scheduler.sync();
   await until(() => h.failures.length === 2); assert.equal(h.failures[1], 'timeout');
 });
-test('reader-mode login failure does not open login and retry keeps the requested chapter', () => {
+test('reader-mode login failure tries the successor once without opening login', () => {
   const p = probe(); p.setReadingMode(true); p.startNextChapter();
   p.accept(p.nextTask()!.id, { ...visible, state: 'NeedsLogin', pageKind: 'login' });
-  assert.equal(p.snapshot().recovery.waitingLogin, false); assert.equal(p.getChapter()?.status, 'unavailable');
-  assert.equal(p.retryReadingChapter(), true); assert.ok(p.nextTask()!.url.endsWith('/2/'));
+  assert.equal(p.snapshot().recovery.waitingLogin, false); assert.ok(p.nextTask()!.url.endsWith('/3/'));
+  p.accept(p.nextTask()!.id, { ...visible, state: 'NeedsLogin', pageKind: 'login' });
+  assert.equal(p.getChapter()?.status, 'unavailable');
+  assert.equal(p.retryReadingChapter(), true); assert.ok(p.nextTask()!.url.endsWith('/3/'));
+});
+
+test('foreground skips one failed chapter, rejects stale batches and resets allowance after success', () => {
+  const p = probe(); p.setReadingMode(true);
+  for (const id of ['2', '4']) {
+    p.startNextChapter(); const old = p.nextTask()!;
+    p.acceptChapter(old.id, { status: 'unavailable', reason: 'locked' });
+    assert.equal(p.snapshot().failure, undefined);
+    assert.equal(p.acceptChapter(old.id, { status: 'available', offset: 0, total: 4, text: 'body' }), 'stale');
+    complete(p); assert.equal(p.readingLocation().chapterId, String(Number(id) + 1));
+    assert.equal(p.takeSkipNotice(), 'Fixture'); assert.equal(p.takeSkipNotice(), undefined);
+  }
+  p.startNextChapter(); p.acceptChapter(p.nextTask()!.id, { status: 'unavailable', reason: 'locked' });
+  assert.equal(p.nextTask(), null); assert.equal(p.getChapter()?.status, 'unavailable');
+  assert.equal(p.readingLocation().chapterId, '5');
+  p.selectChapter('100', '2'); p.cancel(); assert.equal(p.nextTask(), null); assert.equal(p.takeSkipNotice(), undefined);
+});
+
+test('prefetch tolerates a hole including the horizon edge without a false cache-capacity error', async () => {
+  for (const failed of ['2', '4']) {
+    const p = probe(); const h = setup(p); h.scheduler.sync();
+    for (const id of failed === '2' ? ['3', '4'] : ['2', '3', '5']) {
+      await until(() => p.isPrefetching());
+      if (p.nextTask()!.url.endsWith(`/${failed}/`)) {
+        p.acceptChapter(p.nextTask()!.id, { status: 'unavailable', reason: 'content-not-found' });
+      }
+      assert.ok(p.nextTask()!.url.endsWith(`/${id}/`));
+      complete(p); h.scheduler.sync(); await until(() => h.data.has(id));
+    }
+    await new Promise(r => setTimeout(r, 10));
+    assert.deepEqual(h.failures, []); assert.equal(h.data.has(failed), false);
+    assert.equal(p.readingLocation().chapterId, '1'); assert.equal(p.nextTask(), null);
+    assert.equal(p.takeSkipNotice(), 'Fixture'); h.scheduler.dispose();
+  }
+});
+
+test('initial reading fallback can use cache without committing the failed chapter', () => {
+  const p = new QidianAccessProbe(true); p.invalidateTask(); p.setReadingMode(true);
+  p.resumeBook('100', catalog); p.selectChapter('100', '1');
+  p.resolveCachedChapter(p.currentTaskId()!);
+  p.failConnection(p.currentTaskId()!);
+  const pending = p.pendingCacheChapter()!; assert.equal(pending.id, '2');
+  p.resolveCachedChapter(pending.taskId, { bookId: '100', chapterId: '2', title: 'Fixture', url: pending.url, text: 'cached' });
+  assert.equal(p.readingLocation().chapterId, '2'); assert.equal(p.getReadingChapter()?.text, 'cached');
+  assert.equal(p.snapshot().failure, undefined); assert.equal(p.takeSkipNotice(), 'Fixture');
 });
 
 test('a cache lookup completing after pause cannot launch an obsolete task', async () => {
