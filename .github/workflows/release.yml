@@ -1,0 +1,79 @@
+name: Build VSIX and draft release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Validate version and tag
+        id: version
+        run: node scripts/validate-release.mjs
+      - run: npm ci
+      - run: npm run check:browser
+      - run: npm test
+      - run: npm run package:vsix
+      - name: Verify packaged files
+        shell: pwsh
+        run: ./scripts/verify-vsix.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: idle-page-${{ steps.version.outputs.version }}
+          path: dist/idle-page-${{ steps.version.outputs.version }}.vsix
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: idle-page-${{ needs.build.outputs.version }}
+          path: dist
+      - name: Create or update draft only
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $asset = "dist/idle-page-$env:RELEASE_VERSION.vsix"
+          $existing = gh release view $env:RELEASE_TAG --json isDraft
+          if ($LASTEXITCODE -eq 0) {
+            if (-not ($existing | ConvertFrom-Json).isDraft) { throw 'Release already published; refusing to replace its assets. Use a new version.' }
+            gh release upload $env:RELEASE_TAG $asset --clobber
+          } else {
+            gh release create $env:RELEASE_TAG $asset --verify-tag --draft --title "IdlePage $env:RELEASE_TAG" --notes-file docs/RELEASE-NOTES-TEMPLATE.md --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'Draft release upload failed' }
