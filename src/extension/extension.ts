@@ -338,7 +338,8 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('idlepage.refreshBookshelf', () => { if (refreshBookshelf()) navigation!.openShelf(); }),
       vscode.commands.registerCommand('idlepage.refreshAll', refreshAll),
       vscode.commands.registerCommand('idlepage.openSettings', () => vscode.commands.executeCommand('workbench.action.openSettings', '@ext:myosotis0v0.idle-page')),
-      vscode.commands.registerCommand('idlepage.openKeybindings', () => vscode.commands.executeCommand('workbench.action.openGlobalKeybindings', '@ext:myosotis0v0.idle-page')),
+      // Rebound shortcuts have User source, so @ext would hide them after editing.
+      vscode.commands.registerCommand('idlepage.openKeybindings', () => vscode.commands.executeCommand('workbench.action.openGlobalKeybindings', 'idlepage')),
       vscode.commands.registerCommand('idlepage.cancelTask', () => { const settingUp = setup.active; setup.dismiss(); selectionEpoch++; const wasPrefetch = probe.isPrefetching(); prefetch?.pause(); const cancelled = probe.cancel() || wasPrefetch; update(); if (diagnosticPreviews && probe.getReadingChapter()) showChapter(); return settingUp || cancelled || refreshing; }),
       vscode.workspace.onDidChangeConfiguration(event => {
         if (event.affectsConfiguration('idlepage.reading.widthPercent') || event.affectsConfiguration('window.zoomLevel')) reader.render();

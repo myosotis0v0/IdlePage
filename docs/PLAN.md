@@ -556,3 +556,9 @@ API 依据：[EnumWindows](https://learn.microsoft.com/en-us/windows/win32/api/w
 - 用户确认暂不发版，仅完善后续入口。新增 Prepare version and draft release，手动填写版本号后从 main 准备版本提交、原子推送 main 和标签，再直接调用可复用构建及草稿工作流，避免 GITHUB_TOKEN 推送标签不触发工作流的问题。
 - 接受与当前版本相同但尚未打标签的版本或更高版本；拒绝非法/回退版本、重复标签、版本清单不一致、脏目录和已过时的 main。只准备 Release 草稿，保留最终手动发布。原有 main 手动试打包和直接推送标签入口继续保留。
 - 本地隔离 Git 仓库验证：版本输入边界、dry-run 不改变引用、版本提交和标签内容一致、重复标签及 main 前进后拒绝执行；临时测试数据仅在忽略的 .local 中。工作流 YAML 结构和调用参数核对通过。云端准备、推送标签与草稿创建未实跑，按用户要求不创建新版本或标签；当前版本保持 0.0.3。
+
+### 2026-10-14：0.0.4 修复改绑后快捷键条目消失
+
+- 根因：配置快捷键入口使用 @ext:myosotis0v0.idle-page 筛选，VS Code 将自定义绑定归为 User 来源，导致改绑后不再命中扩展来源过滤。核对官方 keybindingsEditorModel.ts 的 filterByExtension 与来源赋值逻辑确认。
+- 入口改为普通文本 idlepage 搜索，以命令 ID/名称匹配默认和用户自定义绑定；不修改用户 keybindings.json，已有改绑仍保留，可继续编辑。README 同步说明。
+- 81 项单元/集成测试通过；安装后连续改绑的原生快捷键列表表现待用户验证。版本更新至 0.0.4 并生成本地 VSIX；本次不推送版本标签或公开发布 Release。
