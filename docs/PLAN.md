@@ -548,3 +548,5 @@ API 依据：[EnumWindows](https://learn.microsoft.com/en-us/windows/win32/api/w
 - 分支手动运行仅生成构建产物；版本标签创建 Release 草稿，仅附加 VSIX。重跑允许替换草稿同名附件并保留说明，已发布版本拒绝覆盖。不产生发布 ZIP 或 SHA256 文件。
 - 使用内置 GITHUB_TOKEN，无需用户提供个人凭据；网页试运行、版本标签发布和失败处理步骤见 [发布指南](RELEASING.md)。本次仅为发布基础设施改动，插件版本保持 0.0.3。
 - 本地 81 项单元/集成测试、浏览器脚本检查、编译、打包和 VSIX 内容检查通过；云端首次执行仍需在 GitHub Actions 手动运行验证，不能用本地通过代替云端证据。本机 VS Code 和账号交互测试不在该工作流内。
+
+- 用户反馈云端出现 Node.js 20 弃用警告：旧版 Actions 被 runner 强制使用 Node.js 24，区别于构建使用的 node-version。将 checkout/setup-node/upload-artifact 升级为 v6、download-artifact 升级为 v7；逐一核对官方 action.yml，均声明 node24（download-artifact v6 仍声明 node20，故使用 v7）。YAML 结构检查通过；更新后的云端结果待从 main 新发起运行验证。仅修改 CI，插件版本保持不变。
