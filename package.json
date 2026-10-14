@@ -1,6 +1,6 @@
 {
   "name": "idle-page",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "repository": {
     "type": "git",
@@ -101,6 +101,13 @@
           "maximum": 4096,
           "scope": "machine",
           "description": "本地阅读缓存容量（MiB），包含索引；超额时优先淘汰最久未使用的正文。"
+        },
+        "idlepage.reading.leftOffsetPercent": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "状态栏阅读区在剩余空间内的左侧偏移比例：0% 靠左，100% 靠右。中间位置根据窗口宽度估算，其他状态栏项目和字体会影响实际位置；不改变正文宽度或阅读进度。"
         },
         "idlepage.reading.widthPercent": {
           "type": "number",

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ReadingText } from '../application/ReadingText';
 import { WindowWidth } from '../infrastructure/WindowWidth';
+import { statusPlacement } from './statusPlacement';
 
 export class StatusReader implements vscode.Disposable {
   private changed = new vscode.EventEmitter<ReturnType<StatusReader['state']>>();
@@ -9,6 +10,8 @@ export class StatusReader implements vscode.Disposable {
   private bodies = [0, 1, 2].map(i => vscode.window.createStatusBarItem('idlepage.readingText' + i, vscode.StatusBarAlignment.Left, -2 - i));
   private progress = vscode.window.createStatusBarItem('idlepage.chapterProgress', vscode.StatusBarAlignment.Left, -5);
   private back = vscode.window.createStatusBarItem('idlepage.returnReading', vscode.StatusBarAlignment.Left, -6);
+  private spacers: vscode.StatusBarItem[] = [];
+  private rightAligned = false;
   private layout = new ReadingText();
   private width = 1000;
   private count = '';
@@ -24,9 +27,37 @@ export class StatusReader implements vscode.Disposable {
     }, 300);
   });
   constructor() {
+    this.configureItems();
+  }
+  private configureItems() {
     this.number.name = '余页章节'; this.bodies[0].name = '余页正文'; this.progress.name = '余页进度'; this.back.name = '余页返回阅读';
     this.bodies.forEach(item => { item.command = 'idlepage.nextSegment'; }); this.back.command = 'idlepage.returnReading'; this.back.text = '$(arrow-left) 返回阅读';
     this.number.command = 'idlepage.openBookshelf';
+  }
+  private place(right: boolean, chunks: string[]) {
+    if (right !== this.rightAligned) {
+      for (const item of [this.number, ...this.bodies, this.progress, this.back, ...this.spacers]) item.dispose();
+      this.spacers = [];
+      this.rightAligned = right;
+      const alignment = right ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left;
+      const base = right ? 10000 : 0;
+      this.number = vscode.window.createStatusBarItem('idlepage.chapterNumber', alignment, base - 1);
+      this.bodies = [0, 1, 2].map(i => vscode.window.createStatusBarItem('idlepage.readingText' + i, alignment, base - 2 - i));
+      this.progress = vscode.window.createStatusBarItem('idlepage.chapterProgress', alignment, base - 5);
+      this.back = vscode.window.createStatusBarItem('idlepage.returnReading', alignment, base - 6);
+      this.configureItems();
+    }
+    while (this.spacers.length < chunks.length) {
+      const i = this.spacers.length;
+      const item = vscode.window.createStatusBarItem('idlepage.readingOffset' + i,
+        right ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left,
+        right ? 9993 - i : -0.5 - i * 0.1);
+      item.name = '余页阅读偏移';
+      this.spacers.push(item);
+    }
+    this.spacers.forEach((item, i) => {
+      if (i < chunks.length) { item.text = chunks[i]; item.show(); } else item.hide();
+    });
   }
   set(identity: string, text: string, current: number, total: number) {
     this.count = `${current}/${total}`; this.layout.set(identity, text); this.geometry.start(); this.render();
@@ -42,6 +73,7 @@ export class StatusReader implements vscode.Disposable {
     const percentage = vscode.workspace.getConfiguration('idlepage').get<number>('reading.widthPercent', 60);
     const zoom = vscode.workspace.getConfiguration('window').get<number>('zoomLevel', 0);
     const logicalWidth = this.width / Math.pow(1.2, zoom);
+    const offset = vscode.workspace.getConfiguration('idlepage').get<number>('reading.leftOffsetPercent', 0);
     // VS Code caps each native item at 40vw. Use <=30% chunks with room for
     // the native item's margins/padding; preserve one logical reading segment.
     const slots = Math.max(1, Math.ceil(percentage / 30));
@@ -49,7 +81,9 @@ export class StatusReader implements vscode.Disposable {
     this.layout.resize(perItemCells, slots);
     this.changed.fire(this.state());
     const external = vscode.workspace.getConfiguration('idlepage').get<string>('reading.location', 'statusBar') !== 'statusBar';
-    if (this.hidden || !this.count && !this.error || external && !this.error) { for (const item of [this.number, ...this.bodies, this.progress, this.back]) item.hide(); return; }
+    if (this.hidden || !this.count && !this.error || external && !this.error) { for (const item of [this.number, ...this.bodies, this.progress, this.back, ...this.spacers]) item.hide(); return; }
+    const placement = statusPlacement(logicalWidth, percentage, offset);
+    this.place(placement.right, this.error ? [] : placement.chunks);
     const view = this.layout.view();
     this.number.text = this.count || '0/0'; this.number.show();
     const tooltip = new vscode.MarkdownString();
@@ -60,7 +94,7 @@ export class StatusReader implements vscode.Disposable {
     tooltip.isTrusted = { enabledCommands: ['idlepage.showBrowser', 'idlepage.returnReading', 'idlepage.retryReading', 'idlepage.previousSegment', 'idlepage.nextSegment', 'idlepage.nextChapter', 'idlepage.toggleReading', 'idlepage.openKeybindings'] };
     const chunks = this.error ? [this.error] : view.chunks;
     // Partition by the same measured units used for pagination, never truncate.
-    while (this.bodies.length < chunks.length) this.bodies.push(vscode.window.createStatusBarItem('idlepage.readingText' + this.bodies.length, vscode.StatusBarAlignment.Left, -2 - this.bodies.length));
+    while (this.bodies.length < chunks.length) this.bodies.push(vscode.window.createStatusBarItem('idlepage.readingText' + this.bodies.length, this.rightAligned ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left, (this.rightAligned ? 10000 : 0) - 2 - this.bodies.length));
     this.bodies.forEach((item, index) => {
       item.name = 'IdlePage reading';
       if (index >= chunks.length) { item.hide(); return; }
@@ -72,5 +106,5 @@ export class StatusReader implements vscode.Disposable {
     this.progress.text = `${view.progress}%`; this.progress.show();
     if (this.error) this.back.show(); else this.back.hide();
   }
-  dispose() { if (this.widthTimer) clearTimeout(this.widthTimer); this.changed.dispose(); this.geometry.dispose(); for (const item of [this.number, ...this.bodies, this.progress, this.back]) item.dispose(); }
+  dispose() { if (this.widthTimer) clearTimeout(this.widthTimer); this.changed.dispose(); this.geometry.dispose(); for (const item of [this.number, ...this.bodies, this.progress, this.back, ...this.spacers]) item.dispose(); }
 }

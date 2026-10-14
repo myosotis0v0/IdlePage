@@ -342,7 +342,7 @@ export async function activate(context: vscode.ExtensionContext) {
       vscode.commands.registerCommand('idlepage.openKeybindings', () => vscode.commands.executeCommand('workbench.action.openGlobalKeybindings', 'idlepage')),
       vscode.commands.registerCommand('idlepage.cancelTask', () => { const settingUp = setup.active; setup.dismiss(); selectionEpoch++; const wasPrefetch = probe.isPrefetching(); prefetch?.pause(); const cancelled = probe.cancel() || wasPrefetch; update(); if (diagnosticPreviews && probe.getReadingChapter()) showChapter(); return settingUp || cancelled || refreshing; }),
       vscode.workspace.onDidChangeConfiguration(event => {
-        if (event.affectsConfiguration('idlepage.reading.widthPercent') || event.affectsConfiguration('window.zoomLevel')) reader.render();
+        if (event.affectsConfiguration('idlepage.reading.widthPercent') || event.affectsConfiguration('idlepage.reading.leftOffsetPercent') || event.affectsConfiguration('window.zoomLevel')) reader.render();
         if (cache && event.affectsConfiguration('idlepage.cache.maxSizeMB')) void cache.setLimit(vscode.workspace.getConfiguration('idlepage').get<number>('cache.maxSizeMB', 200) * 1024 * 1024).catch(warnCache);
       }),
       vscode.commands.registerCommand('idlepage.showBrowser', () => controlBrowserWindow('show')),
