@@ -5,16 +5,24 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: Existing version tag to build and release
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag || github.ref }}
   cancel-in-progress: false
 
 jobs:
   build:
+    permissions:
+      contents: read
     runs-on: windows-latest
     timeout-minutes: 20
     outputs:
@@ -22,6 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.release_tag || github.ref }}
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
@@ -29,10 +38,13 @@ jobs:
           cache: npm
       - name: Validate version and tag
         id: version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
         run: node scripts/validate-release.mjs
       - run: npm ci
       - run: npm run check:browser
       - run: npm test
+      - run: node --test tests/release/*.test.mjs
       - run: npm run package:vsix
       - name: Verify packaged files
         shell: pwsh
@@ -45,7 +57,7 @@ jobs:
           retention-days: 14
 
   release:
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || inputs.release_tag != ''
     needs: build
     runs-on: windows-latest
     timeout-minutes: 5
@@ -54,6 +66,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: ${{ inputs.release_tag || github.ref }}
           persist-credentials: false
       - uses: actions/download-artifact@v7
         with:
@@ -64,7 +77,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           RELEASE_VERSION: ${{ needs.build.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'

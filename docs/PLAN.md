@@ -550,3 +550,9 @@ API 依据：[EnumWindows](https://learn.microsoft.com/en-us/windows/win32/api/w
 - 本地 81 项单元/集成测试、浏览器脚本检查、编译、打包和 VSIX 内容检查通过；云端首次执行仍需在 GitHub Actions 手动运行验证，不能用本地通过代替云端证据。本机 VS Code 和账号交互测试不在该工作流内。
 
 - 用户反馈云端出现 Node.js 20 弃用警告：旧版 Actions 被 runner 强制使用 Node.js 24，区别于构建使用的 node-version。将 checkout/setup-node/upload-artifact 升级为 v6、download-artifact 升级为 v7；逐一核对官方 action.yml，均声明 node24（download-artifact v6 仍声明 node20，故使用 v7）。YAML 结构检查通过；更新后的云端结果待从 main 新发起运行验证。仅修改 CI，插件版本保持不变。
+
+### 2026-10-14：网页一键准备版本入口
+
+- 用户确认暂不发版，仅完善后续入口。新增 Prepare version and draft release，手动填写版本号后从 main 准备版本提交、原子推送 main 和标签，再直接调用可复用构建及草稿工作流，避免 GITHUB_TOKEN 推送标签不触发工作流的问题。
+- 接受与当前版本相同但尚未打标签的版本或更高版本；拒绝非法/回退版本、重复标签、版本清单不一致、脏目录和已过时的 main。只准备 Release 草稿，保留最终手动发布。原有 main 手动试打包和直接推送标签入口继续保留。
+- 本地隔离 Git 仓库验证：版本输入边界、dry-run 不改变引用、版本提交和标签内容一致、重复标签及 main 前进后拒绝执行；临时测试数据仅在忽略的 .local 中。工作流 YAML 结构和调用参数核对通过。云端准备、推送标签与草稿创建未实跑，按用户要求不创建新版本或标签；当前版本保持 0.0.3。

@@ -1,6 +1,6 @@
 # 自动生成 VSIX 与 Release 草稿
 
-工作流：`.github/workflows/release.yml`。使用 GitHub 托管的 Windows runner 和 Node.js 24；不需要本机保持开机，也不需要配置个人 Token 或 Marketplace 凭据。发布任务使用仓库自动提供的 `GITHUB_TOKEN`，仅该任务申请 `contents: write`。
+工作流：`.github/workflows/prepare-release.yml` 提供网页发版入口，`.github/workflows/release.yml` 负责构建和 Release 草稿。使用 GitHub 托管的 Windows runner 和 Node.js 24；不需要本机保持开机，也不需要配置个人 Token 或 Marketplace 凭据。使用仓库自动提供的 `GITHUB_TOKEN`，只有版本准备和草稿上传任务需要 `contents: write`，构建任务只读。
 
 ## 首次试运行（不创建 Release）
 
@@ -10,7 +10,22 @@
 
 如果工作流被禁用，在仓库 **Settings → Actions → General** 中允许 GitHub Actions 及本流程使用的官方 `actions/*`。通常无需修改默认 Workflow permissions：工作流已显式声明所需权限；组织强制策略限制时由管理员调整。无需添加 Secrets。
 
-## 发布新版本
+## 网页一键准备新版本（推荐）
+
+准备发布时，先确保功能代码已提交并推送到 `main`，然后：
+
+1. 打开 **Actions → Prepare version and draft release → Run workflow**。
+2. 分支选择 **main**，填写版本号，例如 `0.0.4`（不带 `v`），点击运行。
+3. 自动更新 `package.json` 和锁文件、提交版本变更，并创建 `v0.0.4` 标签；然后执行测试、打包，生成带 VSIX 附件的 Release 草稿。
+4. 打开 **Releases**，编辑草稿标题和更新说明，确认后点击 **Publish release**。流程不会自动公开发布。
+
+输入版本可以等于已提交的插件版本（此时只创建标签），也可以更高；不允许回退或使用已有标签。`main` 和标签原子推送，不强推；若运行期间 main 已更新，停止并要求从最新 main 新开运行。受保护分支/标签若禁止机器人推送，会明确失败；无需为本流程关闭保护，可改用下方命令行方式按仓库权限提交。
+
+准备任务直接调用可复用构建工作流：GitHub 默认不会让 `GITHUB_TOKEN` 推送的标签再次触发 push 工作流，因此不依赖二次触发，也不需要额外个人 Token。
+
+该入口会实际提交版本和创建标签；只想试打包时，使用前面的 **Build VSIX and draft release**，选择 `main`。完成网页发版后，本机继续开发前运行 `git pull --ff-only`，同步机器人提交的版本变更。
+
+## 命令行发布（备选）
 
 先完成改动、测试并提交，再在仓库 PowerShell 执行（示例版本，按实际版本替换）：
 
@@ -34,6 +49,7 @@ Actions 依次校验版本、安装锁定依赖、检查浏览器脚本、运行
 ## 失败与重跑
 
 - 在 Actions 失败记录中查看红色步骤，临时网络问题可使用 **Re-run failed jobs**。
+- 网页准备步骤已成功、后续构建失败时，只重跑失败任务，不重新填写相同版本运行准备入口，也不要选 Re-run all jobs。也可在原构建工作流手动选择已生成的版本标签运行。
 - 重跑相同标签会替换草稿中同名 VSIX，并保留已编辑的标题和说明。
 - 已正式发布的 Release 不允许覆盖，需使用新版本标签。
 - 代码或工作流修复后要使用包含修复的新提交和新版本标签；重跑旧任务仍使用原提交。

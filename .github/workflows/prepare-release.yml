@@ -1,0 +1,53 @@
+name: Prepare version and draft release
+run-name: Prepare IdlePage v${{ inputs.version }} draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version without v (for example 0.0.4); creates a tag and draft'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepare-idlepage-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.prepare.outputs.tag }}
+    steps:
+      - name: Require main branch
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -ne 'refs/heads/main') { throw 'Run this workflow from main only' }
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          # Needed only here to push the version commit and tag.
+          persist-credentials: true
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Update version and atomically push commit and tag
+        id: prepare
+        env:
+          NEXT_VERSION: ${{ inputs.version }}
+        run: node scripts/prepare-release.mjs
+
+  build-and-draft:
+    needs: prepare
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      release_tag: ${{ needs.prepare.outputs.tag }}
