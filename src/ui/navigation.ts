@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { QidianAccessProbe } from '../application/QidianAccessProbe';
+import type { Bookmark } from '../application/ReadingProgress';
 
 export const menuCommands = ['idlepage.openBookshelf', 'idlepage.showBrowser', 'idlepage.hideBrowser', 'idlepage.refreshBookshelf', 'idlepage.refreshAll', 'idlepage.cancelTask', 'idlepage.openSettings', 'idlepage.toggleReading', 'idlepage.retryReading', 'idlepage.selectReadingLocation', 'idlepage.openKeybindings', 'idlepage.prepareBrowser', 'idlepage.copyBrowserDirectory', 'idlepage.openBrowserExtensions'];
 export function hoverMenu(message: string, busy: boolean, setup?: { text: string; detail: string; active: boolean }): vscode.MarkdownString {
@@ -16,7 +17,7 @@ export function hoverMenu(message: string, busy: boolean, setup?: { text: string
   menu.appendMarkdown('[$(settings-gear) 设置](command:idlepage.openSettings)');
   menu.isTrusted = { enabledCommands: menuCommands }; return menu;
 }
-interface Item extends vscode.QuickPickItem { bookId?: string; chapterId?: string }
+interface Item extends vscode.QuickPickItem { bookId?: string; chapterId?: string; resume?: boolean }
 /** One disposable picker: all navigation stays inside VS Code's native UI. */
 export class Navigation {
   private picker?: vscode.QuickPick<Item>;
@@ -26,6 +27,7 @@ export class Navigation {
   private refresh = { iconPath: new vscode.ThemeIcon('refresh'), tooltip: '刷新当前列表' };
   constructor(private readonly probe: QidianAccessProbe, private readonly actions: {
     shelf(): void; book(id: string, refresh: boolean): Promise<void>; chapter(book: string, chapter: string): void;
+    bookmark?(book: string): Bookmark | undefined; resume?(bookmark: Bookmark): void;
   }) {}
   openShelf() {
     this.bookId = undefined; this.loading = false; this.rendered = '';
@@ -40,7 +42,11 @@ export class Navigation {
       });
       picker.onDidAccept(() => {
         const item = picker.selectedItems[0]; if (!item) return;
-        if (item.chapterId && item.bookId) { this.actions.chapter(item.bookId, item.chapterId); picker.hide(); }
+        if (item.chapterId && item.bookId) {
+          const bookmark = item.resume ? this.actions.bookmark?.(item.bookId) : undefined;
+          if (bookmark) this.actions.resume?.(bookmark); else this.actions.chapter(item.bookId, item.chapterId);
+          picker.hide();
+        }
         else if (item.bookId) void this.loadBook(item.bookId, false);
       });
     }
@@ -65,6 +71,8 @@ export class Navigation {
     if (!this.bookId) {
       for (const book of shelf?.books ?? []) items.push({ label: book.title, description: reading.bookId === book.id ? '正在阅读' : undefined, bookId: book.id });
     } else if (!this.loading && catalog?.bookId === this.bookId && catalog.chapters.length === catalog.total) {
+      const bookmark = this.actions.bookmark?.(this.bookId);
+      if (bookmark) items.push({ label: `$(history) 继续阅读 · ${bookmark.title}`, description: `上次读到 ${bookmark.progress}%`, bookId: bookmark.bookId, chapterId: bookmark.chapterId, resume: true, alwaysShow: true });
       let volume: string | undefined;
       catalog.chapters.forEach((chapter, index) => {
         if (chapter.volume && volume !== chapter.volume) { items.push({ label: chapter.volume, kind: vscode.QuickPickItemKind.Separator }); volume = chapter.volume; }

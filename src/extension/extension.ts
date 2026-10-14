@@ -3,6 +3,8 @@ import { SetupGuide } from '../application/SetupGuide';
 import { ReadingLocation } from '../ui/ReadingLocation';
 import { StatusReader } from '../ui/StatusReader';
 import { ReadingPrefetch } from '../application/ReadingPrefetch';
+import { ReadingProgress, type Bookmark } from '../application/ReadingProgress';
+import { openProgressStorage } from '../infrastructure/cache/ProgressStorage';
 import * as vscode from 'vscode';
 import { chapterPreview, chapterFailureMessage } from '../ui/chapterPreview';
 import { catalogPreview } from '../ui/catalogPreview';
@@ -63,6 +65,28 @@ export async function activate(context: vscode.ExtensionContext) {
   let shuttingDown = false;
   let cacheWarning = false;
   let lastFailure = 0;
+  let displayedBookmark: Pick<Bookmark, 'bookId' | 'chapterId' | 'title'> | undefined;
+  let pendingResume: { bookmark: Bookmark; epoch: number; requested: boolean } | undefined;
+  let progressWarning = false;
+  const progressStorage = await openProgressStorage(storage).catch(() => {
+    void vscode.window.showWarningMessage('阅读进度文件无法读取，暂用本机扩展存储。');
+    return context.globalState;
+  });
+  const progress = new ReadingProgress(progressStorage, () => {
+    if (!progressWarning) { progressWarning = true; void vscode.window.showWarningMessage('阅读进度保存失败，请检查本机存储。'); }
+  });
+  void vscode.commands.executeCommand('setContext', 'idlepage.canResume', !!progress.last());
+  if (progress.last()) {
+    // Existing user bindings may still use the old idlepage.reading condition.
+    // Mark saved reading available but hidden, so segment shortcuts stay inactive.
+    reader.toggle();
+    void vscode.commands.executeCommand('setContext', 'idlepage.reading', true);
+  }
+  context.subscriptions.push(reader.onDidChange(state => {
+    if (!displayedBookmark || !state.count || state.error || pendingResume) return;
+    progress.save({ ...displayedBookmark, offset: state.offset, progress: state.progress });
+    void vscode.commands.executeCommand('setContext', 'idlepage.canResume', true);
+  }));
   const warnCache = () => { if (!cacheWarning) { cacheWarning = true; output.appendLine('本地缓存读写失败，继续在线读取。'); reader.failure('缓存读写失败或空间不足'); } };
   let lifetime = new EdgeLifetime(storage);
   const browserWindows = new BrowserWindowController(new EdgeWindowControl());
@@ -128,10 +152,26 @@ export async function activate(context: vscode.ExtensionContext) {
       if (catalog && catalog.chapters.length === catalog.total) void cache.saveCatalog(catalog).catch(warnCache);
       if (chapter) void cache.saveChapter(chapter).then(saved => { if (!saved) warnCache(); }).catch(warnCache);
     }
+    if (pendingResume && pendingResume.epoch !== selectionEpoch) pendingResume = undefined;
+    if (pendingResume && !pendingResume.requested) {
+      const catalog = probe.getCatalog();
+      if (catalog?.bookId === pendingResume.bookmark.bookId && catalog.total === catalog.chapters.length) {
+        pendingResume.requested = true;
+        if (!probe.selectChapter(catalog.bookId, pendingResume.bookmark.chapterId)) {
+          pendingResume = undefined; reader.failure('上次阅读的章节不在当前目录中，请重新选章');
+        } else { chapterShown = false; ensureBrowser(); }
+      }
+    }
     const reading = probe.readingContext();
     if (!diagnosticPreviews && reading && reading.revision !== readingRevision) {
       readingRevision = reading.revision; const body = probe.getReadingChapter()!;
-      reader.returnReading(false); reader.set(String(reading.revision), body.text, reading.index + 1, reading.catalog.chapters.length);
+      reader.returnReading(false);
+      const chapter = reading.catalog.chapters[reading.index];
+      const bookmark = pendingResume?.bookmark;
+      const resume = bookmark?.bookId === reading.catalog.bookId && bookmark.chapterId === chapter.id;
+      displayedBookmark = { bookId: reading.catalog.bookId, chapterId: chapter.id, title: chapter.title };
+      pendingResume = undefined;
+      reader.set(String(reading.revision), body.text, reading.index + 1, reading.catalog.chapters.length, resume ? bookmark.offset : 0, resume);
       void vscode.commands.executeCommand('setContext', 'idlepage.reading', true);
     }
     if (!diagnosticPreviews && !refreshing && !shuttingDown) prefetch?.sync();
@@ -238,7 +278,7 @@ export async function activate(context: vscode.ExtensionContext) {
       void visibility.requestHide();
     }, isCurrent: id => probe.isCurrentTask(id), hasObserved: id => probe.hasObservedTask(id), onChanged: update });
     context.subscriptions.push({ dispose: () => browserSession?.dispose() });
-    stopBrowser = async () => { shuttingDown = true; selectionEpoch++; prefetch?.dispose(); visibility.dispose(); browserSession?.dispose(); try { await cache?.flush(); } finally { await lifetime.stop(); } };
+    stopBrowser = async () => { shuttingDown = true; selectionEpoch++; prefetch?.dispose(); visibility.dispose(); browserSession?.dispose(); try { await progress.flush(); await cache?.flush(); } finally { await lifetime.stop(); } };
     ensureBrowser = (force = false) => {
       const id = probe.currentTaskId();
       if (!id || probe.pendingCacheChapter() || refreshing || shuttingDown) return;
@@ -256,7 +296,19 @@ export async function activate(context: vscode.ExtensionContext) {
       if (setup.active || refreshing || shuttingDown) return false;
       selectionEpoch++; prefetch?.pause(); diagnosticPreviews = false; probe.startBookshelfExtraction(); update(); ensureBrowser(); return true;
     };
+    const resumeReading = async (bookmark = progress.last()) => {
+      if (setup.active || refreshing || shuttingDown) return;
+      if (!bookmark) { void vscode.window.showInformationMessage('尚无本地阅读进度，请先从书架选择章节。'); return; }
+      if (pendingResume?.epoch === selectionEpoch && probe.currentTaskId()) return;
+      const epoch = ++selectionEpoch; prefetch?.pause(); diagnosticPreviews = false; probe.invalidateTask(); probe.setReadingMode(true);
+      pendingResume = { bookmark, epoch, requested: false };
+      const cached = await cache?.catalog(bookmark.bookId).catch(() => { warnCache(); return undefined; });
+      if (epoch !== selectionEpoch || shuttingDown || refreshing) return;
+      probe.resumeBook(bookmark.bookId, cached?.catalog); update(); ensureBrowser();
+    };
     navigation = new Navigation(probe, {
+      bookmark: id => progress.get(id),
+      resume: bookmark => { void resumeReading(bookmark); },
       shelf: refreshBookshelf,
       book: async (id, refresh) => {
         if (refreshing) return;
@@ -267,7 +319,7 @@ export async function activate(context: vscode.ExtensionContext) {
       },
       chapter: (book, chapter) => {
         if (refreshing) return; selectionEpoch++; prefetch?.pause(); probe.setReadingMode(true); diagnosticPreviews = false;
-        if (probe.selectChapter(book, chapter)) { chapterShown = false; update(); ensureBrowser(); }
+        if (probe.selectChapter(book, chapter)) { reader.returnReading(); chapterShown = false; update(); ensureBrowser(); }
       },
     });
     context.subscriptions.push(navigation);
@@ -316,8 +368,9 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
       vscode.commands.registerCommand('idlepage.nextSegment', () => { if (!reader.state().hidden && !reader.state().error && !reader.next()) return vscode.commands.executeCommand('idlepage.nextChapter'); }),
       vscode.commands.registerCommand('idlepage.previousSegment', () => { if (!reader.state().hidden && !reader.state().error) reader.previous(); }),
-      vscode.commands.registerCommand('idlepage.toggleReading', () => reader.toggle()),
+      vscode.commands.registerCommand('idlepage.toggleReading', () => reader.state().count ? reader.toggle() : resumeReading()),
       vscode.commands.registerCommand('idlepage.returnReading', async () => {
+        if (!reader.state().count) return resumeReading();
         reader.returnReading();
         if (browserWindows.mode === 'diagnostic') {
           try { const result = await browserWindows.hide(); if (result.status !== 'ok') reader.failure('浏览器未能隐藏'); }

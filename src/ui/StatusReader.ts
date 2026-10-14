@@ -6,10 +6,10 @@ import { statusPlacement } from './statusPlacement';
 export class StatusReader implements vscode.Disposable {
   private changed = new vscode.EventEmitter<ReturnType<StatusReader['state']>>();
   readonly onDidChange = this.changed.event;
-  private number = vscode.window.createStatusBarItem('idlepage.chapterNumber', vscode.StatusBarAlignment.Left, -1);
-  private bodies = [0, 1, 2].map(i => vscode.window.createStatusBarItem('idlepage.readingText' + i, vscode.StatusBarAlignment.Left, -2 - i));
-  private progress = vscode.window.createStatusBarItem('idlepage.chapterProgress', vscode.StatusBarAlignment.Left, -5);
-  private back = vscode.window.createStatusBarItem('idlepage.returnReading', vscode.StatusBarAlignment.Left, -6);
+  private number = vscode.window.createStatusBarItem('idlepage.chapterNumber.left', vscode.StatusBarAlignment.Left, -1);
+  private bodies = [0, 1, 2].map(i => vscode.window.createStatusBarItem('idlepage.readingText' + i + '.left', vscode.StatusBarAlignment.Left, -2 - i));
+  private progress = vscode.window.createStatusBarItem('idlepage.chapterProgress.left', vscode.StatusBarAlignment.Left, -5);
+  private back = vscode.window.createStatusBarItem('idlepage.returnReading.left', vscode.StatusBarAlignment.Left, -6);
   private spacers: vscode.StatusBarItem[] = [];
   private rightAligned = false;
   private layout = new ReadingText();
@@ -41,15 +41,17 @@ export class StatusReader implements vscode.Disposable {
       this.rightAligned = right;
       const alignment = right ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left;
       const base = right ? 10000 : 0;
-      this.number = vscode.window.createStatusBarItem('idlepage.chapterNumber', alignment, base - 1);
-      this.bodies = [0, 1, 2].map(i => vscode.window.createStatusBarItem('idlepage.readingText' + i, alignment, base - 2 - i));
-      this.progress = vscode.window.createStatusBarItem('idlepage.chapterProgress', alignment, base - 5);
-      this.back = vscode.window.createStatusBarItem('idlepage.returnReading', alignment, base - 6);
+      const side = right ? '.right' : '.left';
+      // VS Code restores alignment by ID. An ID must always belong to one side.
+      this.number = vscode.window.createStatusBarItem('idlepage.chapterNumber' + side, alignment, base - 1);
+      this.bodies = [0, 1, 2].map(i => vscode.window.createStatusBarItem('idlepage.readingText' + i + side, alignment, base - 2 - i));
+      this.progress = vscode.window.createStatusBarItem('idlepage.chapterProgress' + side, alignment, base - 5);
+      this.back = vscode.window.createStatusBarItem('idlepage.returnReading' + side, alignment, base - 6);
       this.configureItems();
     }
     while (this.spacers.length < chunks.length) {
       const i = this.spacers.length;
-      const item = vscode.window.createStatusBarItem('idlepage.readingOffset' + i,
+      const item = vscode.window.createStatusBarItem('idlepage.readingOffset' + i + (right ? '.right' : '.left'),
         right ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left,
         right ? 9993 - i : -0.5 - i * 0.1);
       item.name = '余页阅读偏移';
@@ -59,15 +61,17 @@ export class StatusReader implements vscode.Disposable {
       if (i < chunks.length) { item.text = chunks[i]; item.show(); } else item.hide();
     });
   }
-  set(identity: string, text: string, current: number, total: number) {
-    this.count = `${current}/${total}`; this.layout.set(identity, text); this.geometry.start(); this.render();
+  set(identity: string, text: string, current: number, total: number, offset = 0, reveal = false) {
+    this.count = `${current}/${total}`; this.layout.set(identity, text); this.layout.seek(offset);
+    if (reveal) this.hidden = false;
+    this.geometry.start(); this.render();
   }
   failure(message: string) { this.error = message; this.render(); }
   returnReading(reveal = true) { this.error = undefined; if (reveal) this.hidden = false; this.render(); }
   toggle() { this.hidden = !this.hidden; this.render(); }
   next() { const moved = this.layout.next(); this.render(); return moved; }
   previous() { this.layout.previous(); this.render(); }
-  state() { return { ...this.layout.view(), count: this.count, error: this.error, hidden: this.hidden }; }
+  state() { return { ...this.layout.view(), count: this.count, error: this.error, hidden: this.hidden, alignment: this.number.alignment }; }
   render() {
     void vscode.commands.executeCommand('setContext', 'idlepage.readingHidden', this.hidden);
     const percentage = vscode.workspace.getConfiguration('idlepage').get<number>('reading.widthPercent', 60);
@@ -94,7 +98,7 @@ export class StatusReader implements vscode.Disposable {
     tooltip.isTrusted = { enabledCommands: ['idlepage.showBrowser', 'idlepage.returnReading', 'idlepage.retryReading', 'idlepage.previousSegment', 'idlepage.nextSegment', 'idlepage.nextChapter', 'idlepage.toggleReading', 'idlepage.openKeybindings'] };
     const chunks = this.error ? [this.error] : view.chunks;
     // Partition by the same measured units used for pagination, never truncate.
-    while (this.bodies.length < chunks.length) this.bodies.push(vscode.window.createStatusBarItem('idlepage.readingText' + this.bodies.length, this.rightAligned ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left, (this.rightAligned ? 10000 : 0) - 2 - this.bodies.length));
+    while (this.bodies.length < chunks.length) this.bodies.push(vscode.window.createStatusBarItem('idlepage.readingText' + this.bodies.length + (this.rightAligned ? '.right' : '.left'), this.rightAligned ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left, (this.rightAligned ? 10000 : 0) - 2 - this.bodies.length));
     this.bodies.forEach((item, index) => {
       item.name = 'IdlePage reading';
       if (index >= chunks.length) { item.hide(); return; }

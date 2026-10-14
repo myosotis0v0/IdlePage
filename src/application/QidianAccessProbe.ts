@@ -73,6 +73,11 @@ export class QidianAccessProbe {
   private bookSelectionRevision = 0;
   selectBook(bookId: string, cached?: CatalogResult): boolean {
     if (!this.bookshelf?.books.some(book => book.id === bookId)) return false;
+    return this.resumeBook(bookId, cached);
+  }
+  /** Resume a validated local bookmark even when its shelf page was evicted. */
+  resumeBook(bookId: string, cached?: CatalogResult): boolean {
+    if (!/^\d{1,20}$/.test(bookId)) return false;
     this.bookSelectionRevision++;
     this.resetRecovery(); this.chapterGoal = false; this.catalogGoal = false;
     this.chapter = undefined; this.chapterText = ''; this.chapterDeadline = 0; this.report = undefined;

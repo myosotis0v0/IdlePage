@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import * as vscode from 'vscode';
 import { hoverMenu, menuCommands } from '../../src/ui/navigation';
@@ -19,6 +19,17 @@ export async function run(): Promise<void> {
     reader.set('fixture', '一二三四五六七八九十'.repeat(50), 2, 12);
     assert.equal(reader.state().count, '2/12'); assert.equal(reader.state().progress, 0);
     reader.next(); const offset = reader.state().offset; assert.ok(offset > 0);
+    const config = vscode.workspace.getConfiguration('idlepage');
+    const originalOffset = config.inspect<number>('reading.leftOffsetPercent')?.globalValue;
+    try {
+      for (const value of [100, 0, 100, 0]) {
+        await config.update('reading.leftOffsetPercent', value, vscode.ConfigurationTarget.Global);
+        reader.render();
+        await new Promise(r => setTimeout(r, 30));
+        assert.equal(reader.state().alignment, value === 100 ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left);
+        assert.equal(reader.state().offset, offset);
+      }
+    } finally { await config.update('reading.leftOffsetPercent', originalOffset, vscode.ConfigurationTarget.Global); }
     reader.failure('测试失败'); assert.ok(reader.state().error);
     reader.returnReading(); assert.equal(reader.state().error, undefined); assert.equal(reader.state().offset, offset);
     reader.toggle(); assert.equal(reader.state().hidden, true);
@@ -87,7 +98,7 @@ export async function run(): Promise<void> {
   const chapterTask = (await (await fetch(endpoint + '/v1/tasks/next', { method: 'POST', headers, body: '{}' })).json()).task;
   assert.equal(chapterTask.kind, 'chapter');
   assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: chapterTask.id, report: { ...report, pageKind: 'chapter', bookLinks: 0 } }) })).status, 200);
-  const body = 'Fixture chapter body';
+  const body = 'Fixture chapter body. '.repeat(70);
   const bodyReply = await fetch(endpoint + '/v1/chapter/result', { method: 'POST', headers, body: JSON.stringify({ taskId: chapterTask.id, report: { status: 'available', offset: 0, total: body.length, text: body } }) });
   assert.equal(bodyReply.status, 200); assert.ok(!(await bodyReply.text()).includes(body));
   assert.equal(api.getBridgeStatus().phase, 'chapter-preview-ready'); await vscode.commands.executeCommand('idlepage.showChapter');
@@ -138,5 +149,17 @@ export async function run(): Promise<void> {
   assert.equal(await vscode.commands.executeCommand('idlepage.cancelTask'), true);
   assert.equal(api.getBridgeStatus().phase, 'cancelled');
   assert.equal((await fetch(endpoint + '/v1/tasks/result', { method: 'POST', headers, body: JSON.stringify({ taskId: loginTask.id, report }) })).status, 409);
-  console.log('IdlePage extension-host smoke test passed (synthetic chapter navigation, failure retry and directory end; no Qidian requests).');
+  await vscode.commands.executeCommand('idlepage.returnReading');
+  await vscode.commands.executeCommand('idlepage.nextSegment');
+  const savedOffset = api.getReaderStatus().offset;
+  assert.ok(savedOffset > 0);
+  let persisted = false;
+  for (let i = 0; i < 100; i++) {
+    const saved = await readFile(join(dirname(companion), 'reading-progress.json'), 'utf8').then(JSON.parse).catch(() => undefined);
+    if (saved?.books?.some((b: { bookId: string; chapterId: string; offset: number }) => b.bookId === '123' && b.chapterId === '12' && b.offset === savedOffset)) { persisted = true; break; }
+    await new Promise(r => setTimeout(r, 20));
+  }
+  assert.ok(persisted, 'reading position reached the private on-disk metadata file');
+  await writeFile(join(extension.extensionPath, '.local/resume-expected.json'), JSON.stringify({ offset: savedOffset, body }));
+  console.log('IdlePage extension-host smoke test passed; saved synthetic reading offset for restart test.');
 }

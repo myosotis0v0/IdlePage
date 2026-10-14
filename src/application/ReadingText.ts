@@ -117,12 +117,30 @@ export class ReadingText {
     if (this.capacity !== next || this.slots !== slots) { this.capacity = next; this.slots = slots; this.layout(); }
   }
   private layout() { this.ends = this.chapter.plan(this.start, this.capacity, this.slots); }
+  seek(offset: number) {
+    const target = Number.isFinite(offset) ? Math.max(0, Math.min(offset, Math.max(0, this.chapter.text.length - 1))) : 0;
+    let low = 0, high = Math.max(0, this.chapter.points.length - 1);
+    while (low < high) { const mid = Math.ceil((low + high) / 2); if (this.chapter.offsets[mid] <= target) low = mid; else high = mid - 1; }
+    this.start = low; this.history = []; this.layout();
+  }
   next(): boolean {
     const end = this.ends.at(-1) ?? 0;
     if (end >= this.chapter.points.length) return false;
     this.history.push(this.start); this.start = end; this.layout(); return true;
   }
-  previous() { const previous = this.history.pop(); if (previous !== undefined) { this.start = previous; this.layout(); } }
+  previous() {
+    let previous = this.history.pop();
+    if (previous === undefined && this.start > 0) {
+      let cursor = 0;
+      while (cursor < this.start) {
+        previous = cursor;
+        const end = this.chapter.plan(cursor, this.capacity, this.slots).at(-1)!;
+        if (end >= this.start || end <= cursor) break;
+        this.history.push(cursor); cursor = end;
+      }
+    }
+    if (previous !== undefined) { this.start = previous; this.layout(); }
+  }
   view() {
     let start = this.start;
     const chunks = this.ends.map(end => { const value = this.chapter.display(start, end); start = end; return value; });
