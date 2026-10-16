@@ -6,7 +6,9 @@ import { LocalBridgeServer } from '../../src/infrastructure/local-bridge/LocalBr
 import { QidianAccessProbe } from '../../src/application/QidianAccessProbe';
 const token = 'b'.repeat(64);
 const origin = 'chrome-extension://' + 'b'.repeat(32);
-const source = (await readFile(new URL('../../browser-extension/worker.js', import.meta.url), 'utf8')).replace(/^import .*\r?\n/, '');
+// The worker's module imports are inlined: pairing comes from the context, remote.js as source.
+const source = (await readFile(new URL('../../browser-extension/remote.js', import.meta.url), 'utf8')).replace(/^export /m, '') + '\n' +
+  (await readFile(new URL('../../browser-extension/worker.js', import.meta.url), 'utf8')).replace(/^import .*\r?\n/gm, '');
 const visible = { state: 'SiteContentVisible', pageKind: 'other', bodyCharacters: 1500, bookLinks: 3, verification: false, tooFrequent: false, captchaFrame: false };
 async function until(check: () => boolean) {
   for (let i = 0; i < 100 && !check(); i++) await new Promise(resolve => setTimeout(resolve, 10));

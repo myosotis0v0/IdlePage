@@ -45,12 +45,33 @@ export async function run(): Promise<void> {
   assert.ok(commands.includes('idlepage.openKeybindings'));
   assert.ok(api.getEntryStatus().text.startsWith('$(book)')); assert.equal(api.getEntryStatus().hasClick, false);
   assert.ok(api.getEntryStatus().tooltip.includes('command:idlepage.prepareBrowser'));
-  const hover = hoverMenu('[bad](command:evil)', true);
+  // Logged out everywhere (lazy logins): each area offers only its login entry.
+  const a = 'https://example.com/tools/ear/', b = 'https://example.org/vocab/';
+  const arg = (url: string) => encodeURIComponent(JSON.stringify([url]));
+  const fresh = hoverMenu('就绪', false, undefined, { shelf: false, custom: { practicing: false, sites: [{ url: a, label: 'ear', active: false }] } }).value;
+  assert.ok(fresh.includes('command:idlepage.openBookshelf') && fresh.includes('登录起点'));
+  for (const hidden of ['refreshBookshelf', 'refreshAll', 'toggleReading', 'retryReading', 'selectReadingLocation', 'study.open', 'study.logout']) assert.ok(!fresh.includes('command:idlepage.' + hidden), hidden);
+  // A row per page: its address, then login (signed out), edit and delete for that page.
+  assert.ok(fresh.includes('$(link) ear') && fresh.includes(`"${a}"`) && fresh.includes(`command:idlepage.study.login?${arg(a)}`));
+  assert.ok(fresh.includes(`command:idlepage.study.setServer?${arg(a)}`) && fresh.includes(`command:idlepage.study.removeSite?${arg(a)}`));
+  assert.ok(fresh.includes('command:idlepage.study.addSite'));
+  const empty = hoverMenu('就绪', false, undefined, { shelf: false, custom: { practicing: false, sites: [] } }).value;
+  assert.ok(empty.includes('command:idlepage.study.addSite') && !empty.includes('command:idlepage.study.login'));
+  const hover = hoverMenu('[bad](command:evil)', true, undefined, { shelf: true, custom: { practicing: true, sites: [
+    { url: a, label: 'ear', account: 'reader', active: true }, { url: b, label: 'vocab', active: false }] } });
+  assert.ok(hover.value.includes('reader') && hover.value.includes(`command:idlepage.study.logout?${arg(a)}`) && hover.value.includes(`command:idlepage.study.open?${arg(a)}`));
+  assert.ok(hover.value.includes(`command:idlepage.study.login?${arg(b)}`) && !hover.value.includes(`command:idlepage.study.open?${arg(b)}`));
+  assert.ok(hover.value.indexOf('$(play) ear') < hover.value.indexOf('$(link) vocab'), 'one row per page, in order; short name, full URL as tooltip');
   assert.deepEqual(hover.isTrusted, { enabledCommands: menuCommands });
   assert.ok(!hover.value.includes('[bad](command:evil)'));
   assert.ok(hover.value.includes('command:idlepage.refreshAll'));
   assert.ok(hover.value.indexOf('command:idlepage.refreshBookshelf') >= 0);
   assert.ok(hover.value.indexOf('command:idlepage.refreshBookshelf') < hover.value.indexOf('command:idlepage.refreshAll'));
+  // Reading and the custom site (idlepage/1 practice) are separate areas of the menu.
+  const reading = hover.value.indexOf('**阅读**'), custom = hover.value.indexOf('**自定义网站**');
+  assert.ok(reading > 0 && custom > reading);
+  assert.ok(hover.value.indexOf('command:idlepage.openBookshelf') > reading && hover.value.indexOf('command:idlepage.openBookshelf') < custom);
+  assert.ok(hover.value.indexOf('command:idlepage.study.open') > custom && hover.value.indexOf('command:idlepage.study.setServer') > custom);
   await vscode.commands.executeCommand('idlepage.refreshBookshelf');
   assert.equal(api.getBridgeStatus().phase, 'waiting-bookshelf-list');
   await vscode.commands.executeCommand('idlepage.cancelTask');

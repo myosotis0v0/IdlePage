@@ -1,6 +1,7 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { QidianAccessProbe } from '../../application/QidianAccessProbe';
+import type { RemoteChannel } from './RemoteChannel';
 
 interface BridgeOptions {
   port: number;
@@ -10,6 +11,7 @@ interface BridgeOptions {
   onChanged?: () => void;
   onContact?: () => void;
   onRejected?: (reason: 'HostMismatch' | 'OriginMissing' | 'OriginMismatch' | 'Unauthorized', method: string) => void;
+  remote?: RemoteChannel;
 }
 export class LocalBridgeServer {
   private server?: Server;
@@ -46,6 +48,20 @@ export class LocalBridgeServer {
       server.closeAllConnections();
     });
   }
+  private async readJson(req: IncomingMessage, res: ServerResponse, limit: number): Promise<Record<string, unknown> | undefined> {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > limit) { this.reply(res, 413, { error: 'PayloadTooLarge' }); return; }
+      chunks.push(Buffer.from(chunk));
+    }
+    try {
+      const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+      if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+    } catch {}
+    this.reply(res, 400, { error: 'InvalidJson' }); return;
+  }
   private reply(res: ServerResponse, status: number, body: unknown): void {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(body));
@@ -76,7 +92,23 @@ export class LocalBridgeServer {
     if (req.method === 'GET' && req.url === '/v1/tasks/next') {
       this.options.onContact?.();
       const task = this.options.probe.nextTask(); this.options.onChanged?.();
-      this.reply(res, 200, { task, ...this.options.probe.snapshot() }); return;
+      this.reply(res, 200, { task, ...this.options.probe.snapshot(), remote: !!this.options.remote?.wanted }); return;
+    }
+    const remote = this.options.remote;
+    if (remote && req.method === 'POST' && ['/v1/remote/next', '/v1/remote/result'].includes(req.url ?? '')) {
+      if ((req.headers['content-type'] ?? '').split(';')[0].trim() !== 'application/json') { this.reply(res, 415, { error: 'ExpectedJson' }); return; }
+      // Results carry one remote response body (at most ~1M characters of JSON text).
+      const input = await this.readJson(req, res, req.url === '/v1/remote/next' ? 64 : 4 * 1024 * 1024);
+      if (input === undefined) return;
+      if (req.url === '/v1/remote/next') {
+        if (Object.keys(input).length) { this.reply(res, 400, { error: 'ExpectedEmptyPayload' }); return; }
+        let closed = false; res.once('close', () => { if (!res.writableEnded) closed = true; });
+        const job = await remote.take();
+        if (closed && job) { remote.complete(job.id, { error: 'Undelivered' }); return; }
+        this.reply(res, 200, { request: job ?? null }); return;
+      }
+      if (Object.keys(input).some(key => !['id', 'result'].includes(key))) { this.reply(res, 400, { error: 'InvalidPayload' }); return; }
+      this.reply(res, remote.complete(input.id, input.result) ? 200 : 409, { accepted: true }); return;
     }
     if (req.method === 'GET' && req.url === '/v1/status') {
       this.reply(res, 200, this.options.probe.snapshot()); return;
@@ -104,7 +136,7 @@ export class LocalBridgeServer {
       if (Object.keys(input).length) { this.reply(res, 400, { error: 'ExpectedEmptyPayload' }); return; }
       this.options.onContact?.();
       const task = this.options.probe.nextTask(); this.options.onChanged?.();
-      this.reply(res, 200, { task, ...this.options.probe.snapshot() }); return;
+      this.reply(res, 200, { task, ...this.options.probe.snapshot(), remote: !!this.options.remote?.wanted }); return;
     }
     const result = req.url === '/v1/chapter/diagnostics' ? this.options.probe.acceptChapterDiagnostics(input.taskId, input.report) : req.url === '/v1/chapter/result' ? this.options.probe.acceptChapter(input.taskId, input.report) : req.url === '/v1/catalog/result' ? this.options.probe.acceptCatalog(input.taskId, input.report) : req.url === '/v1/bookshelf/result' ? this.options.probe.acceptBookshelf(input.taskId, input.report) : this.options.probe.accept(input.taskId, input.report);
     if (result !== 'accepted') {

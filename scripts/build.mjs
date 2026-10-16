@@ -4,3 +4,5 @@ await build({ entryPoints: ['tests/extension/suite.ts'], outfile: 'out/tests/sui
 await build({ entryPoints: ['tests/extension/resume.ts'], outfile: 'out/tests/resume.cjs', bundle: true, platform: 'node', format: 'cjs', target: 'node20', external: ['vscode'] });
 
 await build({ entryPoints: ['tests/extension/live.ts'], outfile: 'out/tests/live.cjs', bundle: true, platform: 'node', format: 'cjs', target: 'node20', external: ['vscode'] });
+await build({ entryPoints: ['tests/extension/study.ts'], outfile: 'out/tests/study.cjs', bundle: true, platform: 'node', format: 'cjs', target: 'node20', external: ['vscode'] });
+await build({ entryPoints: ['tests/extension/addsite.ts'], outfile: 'out/tests/addsite.cjs', bundle: true, platform: 'node', format: 'cjs', target: 'node20', external: ['vscode'] });

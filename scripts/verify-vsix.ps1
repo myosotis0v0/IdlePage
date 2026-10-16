@@ -10,7 +10,7 @@ try {
       throw "Unexpected release file: $name"
     }
   }
-  foreach ($name in @('extension/package.json','extension/out/extension.cjs','extension/browser-extension/manifest.json','extension/browser-extension/worker.js')) {
+  foreach ($name in @('extension/package.json','extension/out/extension.cjs','extension/browser-extension/manifest.json','extension/browser-extension/worker.js','extension/browser-extension/remote.js')) {
     if ($names -cnotcontains $name) { throw "Missing release file: $name" }
   }
   $reader = [System.IO.StreamReader]::new($archive.GetEntry('extension/package.json').Open())

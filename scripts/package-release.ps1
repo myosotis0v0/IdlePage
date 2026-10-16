@@ -17,7 +17,7 @@ try {
   New-Item -ItemType Directory -Path $stage | Out-Null
   $template = Join-Path $stage 'browser-extension-template'
   New-Item -ItemType Directory -Path $template | Out-Null
-  foreach ($file in @('manifest.json','worker.js','bookshelf.js','login.js','catalog.js','chapter.js','content.js','status.html','status.js')) {
+  foreach ($file in @('manifest.json','worker.js','remote.js','bookshelf.js','login.js','catalog.js','chapter.js','content.js','status.html','status.js')) {
     Copy-Item -LiteralPath (Join-Path $project "browser-extension/$file") -Destination $template
   }
   Copy-Item -LiteralPath $vsix -Destination $stage

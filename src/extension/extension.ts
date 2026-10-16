@@ -22,7 +22,11 @@ import { ReadingCache } from '../infrastructure/cache/ReadingCache';
 import { hoverMenu, Navigation } from '../ui/navigation';
 import { LocalBridgeServer } from '../infrastructure/local-bridge/LocalBridgeServer';
 import { prepareCompanion, readCompanionOrigin, readExistingPairingToken } from '../infrastructure/local-bridge/prepareCompanion';
-import { openEdgeExtensions, openEdgeCompanion } from '../infrastructure/qidian/openEdgeExtensions';
+import { openEdgeExtensions, openDedicatedEdge, setCompanionDirectory } from '../infrastructure/qidian/openEdgeExtensions';
+import { RemoteChannel } from '../infrastructure/local-bridge/RemoteChannel';
+import { RemoteClient } from '../application/RemoteClient';
+import { serverAddress } from '../domain/remoteProtocol';
+import { StudyController, type CustomSiteState } from '../ui/Study';
 
 let bridge: LocalBridgeServer | undefined;
 let stopBrowser: (() => Promise<void>) | undefined;
@@ -51,6 +55,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(output, status);
   const storage = context.globalStorageUri.fsPath;
   const setup = new SetupGuide(context.globalState.get<boolean>('idlepage.setupCompleted', false));
+  // With a practice address configured, do not keep advertising the Qidian-oriented first-use guide.
   const cacheEnabled = vscode.workspace.getConfiguration('idlepage').get<boolean>('cache.enabled', true);
   const probe = new QidianAccessProbe(cacheEnabled);
   probe.invalidateTask();
@@ -65,6 +70,7 @@ export async function activate(context: vscode.ExtensionContext) {
   let shuttingDown = false;
   let cacheWarning = false;
   let lastFailure = 0;
+  let customSite: () => CustomSiteState | undefined = () => undefined;
   let displayedBookmark: Pick<Bookmark, 'bookId' | 'chapterId' | 'title'> | undefined;
   let pendingResume: { bookmark: Bookmark; epoch: number; requested: boolean } | undefined;
   let progressWarning = false;
@@ -143,10 +149,6 @@ export async function activate(context: vscode.ExtensionContext) {
     if (skippedTitle !== undefined) vscode.window.setStatusBarMessage(`余页：已跳过加载失败章节「${skippedTitle}」，已接续下一章`, 15000);
     const snapshot = { ...probe.snapshot(), cache: cache?.summary(), browserConnection: browserSession?.state,
       browserWindow: { mode: browserWindows.mode, lastAutomaticControl: visibility.lastResult } };
-    if (setup.observe(snapshot)) {
-      void context.globalState.update('idlepage.setupCompleted', true);
-      manageVisibility = true; void visibility.requestHide();
-    }
     if (cache && cachedRevision !== probe.cacheRevision()) {
       cachedRevision = probe.cacheRevision();
       const shelf = probe.getBookshelf(), catalog = probe.getCatalog(), chapter = probe.cacheChapter();
@@ -226,7 +228,8 @@ export async function activate(context: vscode.ExtensionContext) {
     if (diagnosticPreviews && snapshot.bookshelfSummary && !bookshelfShown && !/catalog|chapter/.test(snapshot.phase)) { bookshelfShown = true; showBookshelf(); }
     const guide = setup.view();
     status.text = guide.text ? `$(book) ${guide.text}` : '$(book)';
-    status.tooltip = hoverMenu(guide.text || (refreshing ? '正在关闭旧页面并重新获取书架…' : display.replace(/待核对/g, '已就绪')), setup.active || refreshing || !!probe.currentTaskId(), guide);
+    status.tooltip = hoverMenu(guide.text || (refreshing ? '正在关闭旧页面并重新获取书架…' : display.replace(/待核对/g, '已就绪')), setup.active || refreshing || !!probe.currentTaskId(), guide,
+      { shelf: !!probe.getBookshelf(), custom: customSite() });
     navigation?.update();
     if (display !== lastDisplay) { output.appendLine(display); lastDisplay = display; }
     reportWrites = reportWrites.then(() => writeFile(join(storage, 'bridge-report.json'), JSON.stringify(snapshot, null, 2) + '\n')).catch(() => { output.appendLine('状态记录写入失败'); });
@@ -241,11 +244,25 @@ export async function activate(context: vscode.ExtensionContext) {
     if (secretToken !== token) await context.secrets.store('idlepage.bridge.token', token);
     const port = vscode.workspace.getConfiguration('idlepage').get<number>('bridge.port', 17655);
     const origin = await readCompanionOrigin(context.extensionPath);
-    bridge = new LocalBridgeServer({ port, token, origin, probe, onChanged: update,
+    // Generic idlepage/1 servers (practice etc.): requests run in the companion on the server's origin.
+    const remoteChannel = new RemoteChannel();
+    // Configured practice pages; the older single-address setting still counts until the list is saved.
+    const siteUrls = (): string[] => {
+      const config = vscode.workspace.getConfiguration('idlepage');
+      const list = config.get<string[]>('remote.servers', []).filter(u => typeof u === 'string' && !!serverAddress(u));
+      const legacy = config.get<string>('remote.server', '');
+      return [...new Set(list.length || !serverAddress(legacy) ? list : [legacy.trim()])];
+    };
+    remoteChannel.wanted = siteUrls().length > 0;
+    context.subscriptions.push({ dispose: () => remoteChannel.dispose() });
+    bridge = new LocalBridgeServer({ port, token, origin, probe, onChanged: update, remote: remoteChannel,
       onContact: () => {
         browserSession?.noteContact();
         if (setup.contact()) {
-          probe.setReadingMode(false); probe.startBookshelfExtraction(); manageVisibility = true;
+          // Setup ends at the first companion contact; site logins happen lazily on first use.
+          void context.globalState.update('idlepage.setupCompleted', true);
+          manageVisibility = true; void visibility.requestHide(); update();
+          setTimeout(() => { if (setup.stage === 'ready') { setup.dismiss(); update(); } }, 30000);
         }
       },
       onRejected: (reason, method) => {
@@ -270,13 +287,15 @@ export async function activate(context: vscode.ExtensionContext) {
     });
     context.subscriptions.push({ dispose: () => prefetch?.dispose() });
     // Do not overwrite a running window's paired copy when binding fails.
-    const companion = await prepareCompanion(context.extensionPath, storage, bridge.endpoint(), token);
+    const remoteOrigins = () => [...new Set(siteUrls().map(u => serverAddress(u)!.origin))];
+    const companion = await prepareCompanion(context.extensionPath, storage, bridge.endpoint(), token, remoteOrigins());
+    setCompanionDirectory(companion.directory);
     browserSession = new BrowserSession({ isRunning: async () => {
       const result = await new EdgeWindowControl().control('inspect');
       if (['failed', 'ambiguous'].includes(result.status)) throw new Error('BrowserInspectionFailed');
       return result.status !== 'not-running';
     }, launch: async () => {
-      await lifetime.launch(() => openEdgeCompanion(origin));
+      await lifetime.launch(() => openDedicatedEdge());
       void visibility.requestHide();
     }, isCurrent: id => probe.isCurrentTask(id), hasObserved: id => probe.hasObservedTask(id), onChanged: update });
     context.subscriptions.push({ dispose: () => browserSession?.dispose() });
@@ -294,6 +313,63 @@ export async function activate(context: vscode.ExtensionContext) {
         if (['launch-failed', 'connection-timeout'].includes(result) && probe.failConnection(id)) update();
       }).catch(() => { if (probe.failConnection(id)) { output.appendLine('无法接管专用浏览器的生命周期，请检查其他 IdlePage 服务窗口。'); update(); } });
     };
+    // One client per configured URL, kept while the URL stays in the list (it caches the site's descriptor).
+    const remoteClients = new Map<string, RemoteClient>();
+    const study = new StudyController({
+      sites: () => {
+        const urls = siteUrls();
+        for (const url of [...remoteClients.keys()]) if (!urls.includes(url)) remoteClients.delete(url);
+        return urls.map(url => {
+          let client = remoteClients.get(url);
+          if (!client) remoteClients.set(url, client = new RemoteClient((job, timeout) =>
+            // Fail fast while the companion is not polling; the controller then starts the browser.
+            remoteChannel.connected() ? remoteChannel.run(job, timeout) : Promise.resolve({ error: 'NotPickedUp' }), serverAddress(url)!));
+          return { url, client };
+        });
+      },
+      saveSites: async urls => {
+        const config = vscode.workspace.getConfiguration('idlepage');
+        try {
+          await config.update('remote.servers', urls, vscode.ConfigurationTarget.Global);
+        } catch (error) {
+          // After installing an update without reloading the window, VS Code may still hold the previous
+          // manifest's settings list and refuse a newly added setting as "not a registered configuration".
+          const stale = /not a registered configuration/i.test(String((error as Error)?.message ?? error));
+          const message = stale ? '余页：插件刚更新，需要重新加载 VS Code 窗口后才能保存练习网址。' : `余页：练习网址未能保存（${String((error as Error)?.message ?? error).slice(0, 120)}）`;
+          void vscode.window.showErrorMessage(message, ...(stale ? ['重新加载窗口'] : [])).then(choice => {
+            if (choice === '重新加载窗口') void vscode.commands.executeCommand('workbench.action.reloadWindow');
+          });
+          return false;
+        }
+        // The list replaces the older single-address setting.
+        if (config.inspect<string>('remote.server')?.globalValue !== undefined) await config.update('remote.server', undefined, vscode.ConfigurationTarget.Global);
+        return true;
+      },
+      ensureBrowser: async () => {
+        if (refreshing || shuttingDown) return false;
+        try {
+          await lifetime.start();
+          if ((await new EdgeWindowControl().control('inspect')).status === 'not-running') {
+            await lifetime.launch(() => openDedicatedEdge());
+            manageVisibility = true; void visibility.requestHide();
+          }
+          // A worker that just reloaded for a new server permission needs a few seconds.
+          for (let i = 0; i < 90 && !remoteChannel.connected() && !shuttingDown; i++) await new Promise(resolve => setTimeout(resolve, 500));
+          return remoteChannel.connected();
+        } catch { return false; }
+      },
+      revealBrowser: async () => { const result = await browserWindows.revealForAttention(); if (result.status !== 'ok') throw new Error('RevealFailed'); },
+      hideBrowser: () => { manageVisibility = true; void visibility.requestHide(); },
+      changed: () => update(),
+    });
+    customSite = () => study.state();
+    context.subscriptions.push(study, vscode.workspace.onDidChangeConfiguration(event => {
+      if (!event.affectsConfiguration('idlepage.remote.servers') && !event.affectsConfiguration('idlepage.remote.server')) return;
+      remoteChannel.wanted = siteUrls().length > 0; study.serverChanged();
+      // Re-pair so the companion gains host permission for new servers and reloads itself.
+      void prepareCompanion(context.extensionPath, storage, bridge!.endpoint(), token!, remoteOrigins())
+        .catch(() => { void vscode.window.showWarningMessage('余页：无法更新浏览器扩展的服务器权限。'); });
+    }));
     const refreshBookshelf = () => {
       if (setup.active || refreshing || shuttingDown) return false;
       selectionEpoch++; prefetch?.pause(); diagnosticPreviews = false; probe.startBookshelfExtraction(); update(); ensureBrowser(); return true;
@@ -417,12 +493,17 @@ export async function activate(context: vscode.ExtensionContext) {
         prefetch?.pause(); navigation?.dispose(); probe.invalidateTask(); probe.setReadingMode(false);
         diagnosticPreviews = false; manageVisibility = false; update();
         try {
-          await vscode.env.clipboard.writeText(companion.directory);
-          await lifetime.launch(openEdgeExtensions);
+          // The dedicated Edge loads the paired companion itself (--load-extension); nothing to install by hand.
+          // Restart a running one so it comes up with the current launch switches and extension.
+          await lifetime.start();
+          if ((await new EdgeWindowControl().control('inspect')).status !== 'not-running') {
+            try { await lifetime.stop(); } finally { if (!shuttingDown) lifetime = new EdgeLifetime(storage); }
+            browserSession?.forgetContact();
+          }
           if (epoch !== selectionEpoch || shuttingDown || !setup.active) return;
-          await browserWindows.revealForAttention();
-          // Leave installation visible, then restore automatic hiding after contact.
           setup.opened(); update();
+          await lifetime.launch(() => openDedicatedEdge());
+          manageVisibility = true; void visibility.requestHide();
         } catch { if (epoch === selectionEpoch && setup.active) { setup.fail('准备失败，请确认 Edge 已安装后重新设置'); update(); } }
       }),
       action('idlepage.restartProbe', () => { probe.restart(); update(); ensureBrowser(); }),
@@ -450,7 +531,8 @@ export async function activate(context: vscode.ExtensionContext) {
     return { getBridgeStatus: () => ({ endpoint: bridge!.endpoint(), ...probe.snapshot() }), getCompanionDirectory: () => companion.directory,
       getBrowserWindowMode: () => browserWindows.mode, getCacheStatus: () => cache?.summary(),
       getReaderStatus: () => ({ ...reader.state(), text: undefined, chunks: undefined }),
-      getEntryStatus: () => ({ text: status.text, hasClick: !!status.command, tooltip: (status.tooltip as vscode.MarkdownString)?.value }) };
+      getEntryStatus: () => ({ text: status.text, hasClick: !!status.command, tooltip: (status.tooltip as vscode.MarkdownString)?.value }),
+      getStudyRow: () => study.row() };
   } catch (error) {
     await bridge?.close(); bridge = undefined;
     const code = (error as NodeJS.ErrnoException).code;

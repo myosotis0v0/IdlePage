@@ -1,12 +1,12 @@
 {
   "name": "idle-page",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/myosotis0v0/IdlePage.git"
   },
-  "description": "A discreet VS Code novel reader with status bar reading, online book sources, and account authentication.",
+  "description": "A discreet VS Code novel reader with status bar reading, online book sources, account authentication, and practice cards from any idlepage/1 server.",
   "type": "module",
   "scripts": {
     "package:vsix": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-release.ps1 -VsixOnly",
@@ -23,7 +23,7 @@
     "test:extension": "npm run build && node scripts/test-extension.mjs",
     "vscode:prepublish": "npm run build",
     "dev:live": "npm run build && node scripts/live-extension.mjs",
-    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/content.js && node --check browser-extension/status.js && node --check browser-extension/bookshelf.js && node --check browser-extension/catalog.js && node --check browser-extension/chapter.js && node --check browser-extension/login.js"
+    "check:browser": "node --check browser-extension/worker.js && node --check browser-extension/remote.js && node --check browser-extension/content.js && node --check browser-extension/status.js && node --check browser-extension/bookshelf.js && node --check browser-extension/catalog.js && node --check browser-extension/chapter.js && node --check browser-extension/login.js"
   },
   "engines": {
     "node": ">=22",
@@ -115,6 +115,25 @@
           "minimum": 10,
           "maximum": 80,
           "description": "正文区目标占 VS Code 窗口总宽度的百分比，根据窗口宽度和缩放估算，并非精确布局宽度。"
+        },
+        "idlepage.remote.server": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "markdownDescription": "练习地址：支持 idlepage/1 协议的网站上某个练习页的网址，例如 `https://example.com/tools/music/ear-training/`；只填网站根地址则列出全站题库。请求经专用浏览器发出，复用该网站自己的登录。只保存在本机，不参与 VS Code 设置同步。",
+          "ignoreSync": true,
+          "markdownDeprecationMessage": "已由 `idlepage.remote.servers`（网址列表）取代；在悬停菜单里添加或修改网址后自动迁移。"
+        },
+        "idlepage.remote.servers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "application",
+          "ignoreSync": true,
+          "maxItems": 6,
+          "markdownDescription": "练习网址列表：支持 idlepage/1 协议的网站上的练习页，例如 `https://example.com/tools/music/ear-training/`；只填网站根地址则列出全站题库。书本悬停菜单的“自定义网站”区域每个网址一行，可分别登录、练习、修改和删除。请求经专用浏览器发出，复用网站自己的登录。只保存在本机，不参与 VS Code 设置同步。"
         }
       },
       "title": "IdlePage"
@@ -231,6 +250,42 @@
       {
         "command": "idlepage.openSidebarReadingDemo",
         "title": "余页: 在 Codex 上方打开阅读演示"
+      },
+      {
+        "command": "idlepage.study.open",
+        "title": "余页: 练习"
+      },
+      {
+        "command": "idlepage.study.primary",
+        "title": "余页: 练习 · 翻开 / 作答 / 下一题"
+      },
+      {
+        "command": "idlepage.study.option",
+        "title": "余页: 练习 · 选择选项"
+      },
+      {
+        "command": "idlepage.study.replay",
+        "title": "余页: 练习 · 再听一遍"
+      },
+      {
+        "command": "idlepage.study.again",
+        "title": "余页: 练习 · 再来一组"
+      },
+      {
+        "command": "idlepage.study.stop",
+        "title": "余页: 练习 · 结束"
+      },
+      {
+        "command": "idlepage.study.setServer",
+        "title": "余页: 修改练习网址"
+      },
+      {
+        "command": "idlepage.study.addSite",
+        "title": "余页: 添加练习网址"
+      },
+      {
+        "command": "idlepage.study.removeSite",
+        "title": "余页: 删除练习网址"
       }
     ],
     "keybindings": [
@@ -253,6 +308,70 @@
         "command": "idlepage.toggleReading",
         "key": "alt+h",
         "when": "idlepage.reading || idlepage.webviewReading || idlepage.canResume"
+      },
+      {
+        "command": "idlepage.study.primary",
+        "key": "alt+.",
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.replay",
+        "key": "alt+,",
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.option",
+        "key": "alt+1",
+        "args": 1,
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.option",
+        "key": "alt+2",
+        "args": 2,
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.option",
+        "key": "alt+3",
+        "args": 3,
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.option",
+        "key": "alt+4",
+        "args": 4,
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.option",
+        "key": "alt+5",
+        "args": 5,
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.option",
+        "key": "alt+6",
+        "args": 6,
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.option",
+        "key": "alt+7",
+        "args": 7,
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.option",
+        "key": "alt+8",
+        "args": 8,
+        "when": "idlepage.studying && !inputFocus"
+      },
+      {
+        "command": "idlepage.study.option",
+        "key": "alt+9",
+        "args": 9,
+        "when": "idlepage.studying && !inputFocus"
       }
     ],
     "viewsContainers": {

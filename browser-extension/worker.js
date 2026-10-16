@@ -1,7 +1,10 @@
 import { endpoint, token } from './pairing.js';
+import { createRemote } from './remote.js';
 
 let activeEndpoint = endpoint;
 let activeToken = token;
+let activeRemotes = [];
+const remote = createRemote({ request: (path, options, timeout) => request(path, options, timeout), refresh: () => refreshPairing(), remotes: () => activeRemotes, chrome });
 let running = false;
 let messages = Promise.resolve();
 let navigationEpoch = 0;
@@ -47,14 +50,32 @@ async function refreshPairing() {
   const response = await fetch(chrome.runtime.getURL('pairing.json'), { cache: 'no-store', signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error('InvalidPairing');
   const data = await response.json();
-  if (!data || Object.keys(data).some(k => !['endpoint', 'token'].includes(k)) || !/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(data.endpoint ?? '') ||
-      Number(new URL(data.endpoint).port) < 1 || Number(new URL(data.endpoint).port) > 65535 || !/^[a-f0-9]{64}$/.test(data.token ?? '')) throw new Error('InvalidPairing');
+  if (!data || Object.keys(data).some(k => !['endpoint', 'token', 'remotes'].includes(k)) || !/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(data.endpoint ?? '') ||
+      Number(new URL(data.endpoint).port) < 1 || Number(new URL(data.endpoint).port) > 65535 || !/^[a-f0-9]{64}$/.test(data.token ?? '') ||
+      data.remotes !== undefined && (!Array.isArray(data.remotes) || data.remotes.length > 8 || data.remotes.some(o => typeof o !== 'string' || !/^https?:\/\/[a-z0-9.-]+(?::\d{1,5})?$/i.test(o)))) throw new Error('InvalidPairing');
   activeEndpoint = data.endpoint; activeToken = data.token;
+  const paired = data.remotes ?? [];
+  // The ".idlepage.invalid" entry is only the paired copy's build stamp, never a server to contact.
+  activeRemotes = paired.filter(o => !o.endsWith('.idlepage.invalid'));
+  await reloadIfStale(paired);
 }
-async function request(path, options = {}) {
+// Edge keeps running the old service-worker code of an unpacked extension (imported modules
+// included) across restarts until it reloads itself. The paired copy lists every origin its
+// manifest grants, including a build-stamp placeholder; an origin our loaded manifest lacks means
+// a rebuilt paired copy (or a newly configured server), so reload from disk.
+async function reloadIfStale(paired) {
+  const granted = chrome.runtime.getManifest?.()?.host_permissions;
+  if (!granted || paired.every(o => granted.includes(remotePattern(o)))) return;
+  const { remoteReloadAt } = await chrome.storage.local.get('remoteReloadAt');
+  if (Date.now() - (remoteReloadAt ?? 0) < 60000) return;
+  await chrome.storage.local.set({ remoteReloadAt: Date.now() });
+  chrome.runtime.reload();
+}
+function remotePattern(origin) { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }
+async function request(path, options = {}, timeout = 5000) {
   const send = () => fetch(activeEndpoint + path, {
     ...options, headers: { Authorization: `Bearer ${activeToken}`, 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(5000),
+    signal: AbortSignal.timeout(timeout),
   });
   let response = await send();
   if (response.status === 401) { await refreshPairing(); response = await send(); }
@@ -70,6 +91,7 @@ async function poll() {
     // Privileged extension GET fetches can omit Origin; POST carries the extension Origin.
     const state = await request('/v1/tasks/next', { method: 'POST', body: '{}' });
     await chrome.storage.local.set({ connection: 'connected', connectionError: null, phase: state.phase, serverReport: state.report ?? null });
+    if (state.remote) void remote.loop();
     if (epoch !== navigationEpoch) return;
     await applyBookSelection(state.bookSelectionRevision);
     const task = state.task;
@@ -164,20 +186,17 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 });
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === 'idlepage-bridge') void poll(); });
 async function initialize() {
-  await chrome.storage.local.set({ workerVersion: 11 });
+  await chrome.storage.local.set({ workerVersion: 13 });
   await chrome.alarms.create('idlepage-bridge', { periodInMinutes: 0.5 });
   await poll();
 }
-chrome.runtime.onInstalled.addListener(() => {
-  void (async () => {
-    await chrome.tabs.create({ url: chrome.runtime.getURL('status.html'), active: false });
-    await initialize();
-  })();
-});
+// No page is opened on install or update: the browser starts with one blank page and the worker
+// connects by itself (status.html stays available for diagnostics only).
+chrome.runtime.onInstalled.addListener(() => { void initialize(); });
 chrome.runtime.onStartup.addListener(() => {
   navigationEpoch++;
   void (async () => {
-    await chrome.storage.local.set({ activeTask: null, managedTabs: null, retainedShelf: null, bookSelectionRevision: null, taskTabSummary: { count: 0 } });
+    await chrome.storage.local.set({ activeTask: null, managedTabs: null, retainedShelf: null, bookSelectionRevision: null, taskTabSummary: { count: 0 }, remoteTabs: null, remoteLogin: null });
     // A startup can invalidate an in-flight initialization poll.
     while (running) await new Promise(resolve => setTimeout(resolve, 25));
     await initialize();

@@ -9,7 +9,7 @@ await access(vscodeExecutablePath);
 const user = join(root, '.local/vscode-test-user/User');
 await mkdir(user, { recursive: true });
 await writeFile(join(user, 'settings.json'), JSON.stringify({ 'idlepage.bridge.port': 17656, 'idlepage.browser.autoStart': false, 'idlepage.browser.autoHide': false, 'idlepage.cache.enabled': false }));
-for (const suite of ['suite', 'resume']) await runTests({
+for (const suite of (process.env.IDLEPAGE_SUITES?.split(',') ?? ['suite', 'resume', 'study', 'addsite'])) await runTests({
   vscodeExecutablePath,
   extensionDevelopmentPath: root,
   extensionTestsPath: join(root, `out/tests/${suite}.cjs`),
